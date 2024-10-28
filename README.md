@@ -1,508 +1,614 @@
-RazzShell
+# RazzShell
 
 RazzShell is a custom Unix shell written in C, designed to provide a unique and user-friendly command-line interface. It offers a variety of built-in commands, colorful output, command aliases, environment variable support, and the ability to execute external programs seamlessly. RazzShell aims to combine the functionality of traditional shells with custom features to enhance the user experience.
-Table of Contents
 
-    Features
-    Differences Between RazzShell and Other Shells
-    Installation
-    Usage
-        Starting RazzShell
-        Shell Prompt
-        Built-in Commands
-            File and Directory Operations
-            Process Management
-            System Information
-            Utilities
-            Alias and Environment Variable Management
-            Session Management
-            Miscellaneous Commands
-        External Commands
-    Examples
-    License
+---
 
-Features
+## Table of Contents
 
-    Custom Shell Prompt: Displays the current directory in the prompt for easy navigation.
-    Colorful Output: Directory listings and error messages are color-coded for better readability.
-    Unique Command Names: Built-in commands have custom names to avoid conflicts with external commands.
-    External Command Execution: Supports running any external program installed on your system.
-    Command Aliases: Allows creating shortcuts for frequently used commands.
-    Environment Variable Support: Set, unset, and use environment variables within the shell.
-    Command History: Navigate through your command history using the up/down arrow keys.
-    Root Privilege Elevation: Switch to root user within RazzShell using sudo su.
-    Signal Handling: Handles interrupts like Ctrl+C gracefully without exiting the shell.
-    Background and Foreground Job Control: Manage jobs running in the background or foreground.
-    Bookmarking: Bookmark frequently used commands for quick access.
-    Session Saving and Loading: Save your session history and load it later.
-    Command Flow Visualization: Visualize the flow of command execution.
+- [Features](#features)
+- [Differences Between RazzShell and Other Shells](#differences-between-razzshell-and-other-shells)
+- [Installation](#installation)
+  - [Prerequisites](#prerequisites)
+  - [Installing on Ubuntu/Debian](#installing-on-ubuntudebian)
+  - [Installing on Fedora](#installing-on-fedora)
+  - [Installing on Arch Linux](#installing-on-arch-linux)
+- [Usage](#usage)
+  - [Starting RazzShell](#starting-razzshell)
+  - [Shell Prompt](#shell-prompt)
+  - [Built-in Commands](#built-in-commands)
+    - [File and Directory Operations](#file-and-directory-operations)
+    - [Process Management](#process-management)
+    - [System Information](#system-information)
+    - [Utilities](#utilities)
+    - [Alias and Environment Variable Management](#alias-and-environment-variable-management)
+    - [Session Management](#session-management)
+    - [Miscellaneous Commands](#miscellaneous-commands)
+  - [External Commands](#external-commands)
+- [Examples](#examples)
+- [License](#license)
 
-Differences Between RazzShell and Other Shells
+---
+
+## Features
+
+- **Custom Shell Prompt**: Displays the current directory in the prompt for easy navigation.
+- **Colorful Output**: Directory listings and error messages are color-coded for better readability.
+- **Unique Command Names**: Built-in commands have custom names to avoid conflicts with external commands.
+- **External Command Execution**: Supports running any external program installed on your system.
+- **Command Aliases**: Allows creating shortcuts for frequently used commands.
+- **Environment Variable Support**: Set, unset, and use environment variables within the shell.
+- **Command History**: Navigate through your command history using the up/down arrow keys.
+- **Root Privilege Elevation**: Switch to root user within RazzShell using `sudo su`.
+- **Signal Handling**: Handles interrupts like `Ctrl+C` gracefully without exiting the shell.
+- **Background and Foreground Job Control**: Manage jobs running in the background or foreground.
+- **Bookmarking**: Bookmark frequently used commands for quick access.
+- **Session Saving and Loading**: Save your session history and load it later.
+- **Command Flow Visualization**: Visualize the flow of command execution.
+
+---
+
+## Differences Between RazzShell and Other Shells
 
 RazzShell distinguishes itself from other Unix shells like Bash, Zsh, and Fish by offering:
 
-    Unique Command Names: RazzShell uses custom names for its built-in commands (e.g., change instead of cd, list instead of ls). This encourages users to learn and use the shell's unique features.
+- **Unique Command Names**: RazzShell uses custom names for its built-in commands (e.g., `change` instead of `cd`, `list` instead of `ls`). This encourages users to learn and use the shell's unique features.
+- **Enhanced Visuals**: With colorful output for directory listings and error messages, RazzShell provides a more visually engaging experience compared to traditional shells.
+- **Integrated Features**: RazzShell incorporates features like bookmarking commands, visualizing command flow, and session management directly into the shell without requiring additional scripting or plugins.
+- **Simplified Command Set**: By providing a curated set of built-in commands, RazzShell aims to simplify command usage, making it more approachable for new users.
+- **Consistent Behavior**: Custom commands are designed to behave consistently across different systems, reducing discrepancies that might occur with external commands in other shells.
+- **Root Shell Integration**: RazzShell allows users to elevate to a root shell within the shell itself, maintaining the shell environment and features.
 
-    Enhanced Visuals: With colorful output for directory listings and error messages, RazzShell provides a more visually engaging experience compared to traditional shells.
+---
 
-    Integrated Features: RazzShell incorporates features like bookmarking commands, visualizing command flow, and session management directly into the shell without requiring additional scripting or plugins.
+## Installation
 
-    Simplified Command Set: By providing a curated set of built-in commands, RazzShell aims to simplify command usage, making it more approachable for new users.
+### Prerequisites
 
-    Consistent Behavior: Custom commands are designed to behave consistently across different systems, reducing discrepancies that might occur with external commands in other shells.
+- **GCC Compiler**: Ensure that GCC is installed on your system.
+- **Readline Library**: RazzShell uses the readline library for command-line input.
 
-    Root Shell Integration: RazzShell allows users to elevate to a root shell within the shell itself, maintaining the shell environment and features.
+#### On Ubuntu/Debian:
 
-Installation
-Prerequisites
+```bash
+sudo apt-get update
+sudo apt-get install build-essential libreadline-dev
+```
 
-    GCC Compiler: Ensure that GCC is installed on your system.
+#### On Fedora:
 
-    Readline Library: RazzShell uses the readline library for command-line input.
+```bash
+sudo dnf install gcc make readline-devel
+```
 
-    On Debian-based systems, install it using:
+#### On Arch Linux:
 
-    bash
+```bash
+sudo pacman -S base-devel readline
+```
 
-    sudo apt-get install libreadline-dev
+### Installing on Ubuntu/Debian
 
-Steps
+1. **Clone the Repository:**
 
-    Clone the Repository
+   ```bash
+   git clone https://github.com/rajacharya987/razzshell.git
+   ```
 
-    bash
+2. **Navigate to the Directory:**
 
-git clone https://github.com/rajacharya987/razzshell.git
+   ```bash
+   cd razzshell
+   ```
 
-Navigate to the Directory
+3. **Compile the Source Code:**
 
-bash
+   ```bash
+   gcc -o razzshell razzshell.c -lreadline
+   ```
 
-cd razzshell
+4. **Install RazzShell:**
 
-Compile the Source Code
+   ```bash
+   sudo cp razzshell /usr/local/bin/
+   sudo chmod +x /usr/local/bin/razzshell
+   ```
 
-bash
+### Installing on Fedora
 
-    gcc -o razzshell razzshell.c -lreadline
+1. **Clone the Repository:**
 
-    If you encounter errors related to readline, ensure that the readline library is installed on your system.
+   ```bash
+   git clone https://github.com/rajacharya987/razzshell.git
+   ```
 
-Usage
-Starting RazzShell
+2. **Navigate to the Directory:**
+
+   ```bash
+   cd razzshell
+   ```
+
+3. **Compile the Source Code:**
+
+   ```bash
+   gcc -o razzshell razzshell.c -lreadline
+   ```
+
+4. **Install RazzShell:**
+
+   ```bash
+   sudo cp razzshell /usr/local/bin/
+   sudo chmod +x /usr/local/bin/razzshell
+   ```
+
+### Installing on Arch Linux
+
+#### Option 1: Using `yay` (AUR Helper)
+
+If you have `yay` installed, you can install RazzShell directly from the AUR:
+
+```bash
+yay -S razzshell
+```
+
+#### Option 2: Building from Source
+
+1. **Clone the Repository:**
+
+   ```bash
+   git clone https://github.com/rajacharya987/razzshell.git
+   ```
+
+2. **Navigate to the Directory:**
+
+   ```bash
+   cd razzshell
+   ```
+
+3. **Compile the Source Code:**
+
+   ```bash
+   gcc -o razzshell razzshell.c -lreadline
+   ```
+
+4. **Install RazzShell:**
+
+   ```bash
+   sudo cp razzshell /usr/local/bin/
+   sudo chmod +x /usr/local/bin/razzshell
+   ```
+
+---
+
+## Usage
+
+### Starting RazzShell
 
 Run the compiled executable:
 
-bash
-
-./razzshell
+```bash
+razzshell
+```
 
 You will be greeted with a prompt similar to:
 
-css
-
+```
 razzshell-$ [current_directory]>
+```
 
-Shell Prompt
+### Shell Prompt
 
-    Regular User: razzshell-$ [directory]>
-    Root User: razzshell-# [directory]>
+- **Regular User:** `razzshell-$ [directory]>`
+- **Root User:** `razzshell-# [directory]>`
 
-The prompt displays the shell type ($ for regular users, # for root) and the current directory.
-Built-in Commands
-File and Directory Operations
+The prompt displays the shell type (`$` for regular users, `#` for root) and the current directory.
 
-    change: Change the current working directory.
+---
 
-    bash
+### Built-in Commands
 
-change [directory]
+#### File and Directory Operations
 
-list: List directory contents with color-coded output.
+- **`change`**: Change the current working directory.
 
-bash
+  ```
+  change [directory]
+  ```
 
-list [-a] [directory]
+- **`list`**: List directory contents with color-coded output.
 
-    -a: Include hidden files.
+  ```
+  list [-a] [directory]
+  ```
 
-copy: Copy files from one location to another.
+  - `-a`: Include hidden files.
 
-bash
+- **`copy`**: Copy files from one location to another.
 
-copy [source] [destination]
+  ```
+  copy [source] [destination]
+  ```
 
-move: Move or rename files.
+- **`move`**: Move or rename files.
 
-bash
+  ```
+  move [source] [destination]
+  ```
 
-move [source] [destination]
+- **`delete`**: Delete files.
 
-delete: Delete files.
+  ```
+  delete [file]
+  ```
 
-bash
+- **`makedir`**: Create a new directory.
 
-delete [file]
+  ```
+  makedir [directory]
+  ```
 
-makedir: Create a new directory.
+- **`removedir`**: Remove an empty directory.
 
-bash
+  ```
+  removedir [directory]
+  ```
 
-makedir [directory]
+- **`create`**: Create a new file.
 
-removedir: Remove an empty directory.
+  ```
+  create [filename]
+  ```
 
-bash
+- **`readfile`**: Display the contents of a file.
 
-removedir [directory]
+  ```
+  readfile [filename]
+  ```
 
-create: Create a new file.
+- **`headfile`**: Display the first lines of a file.
 
-bash
+  ```
+  headfile [filename]
+  ```
 
-create [filename]
+- **`tailfile`**: Display the last lines of a file.
 
-readfile: Display the contents of a file.
+  ```
+  tailfile [filename]
+  ```
 
-bash
+- **`wordcount`**: Count words, lines, and characters in a file.
 
-readfile [filename]
+  ```
+  wordcount [filename]
+  ```
 
-headfile: Display the first lines of a file.
+#### Process Management
 
-bash
+- **`showprocesses`**: Display running processes.
 
-headfile [filename]
+  ```
+  showprocesses
+  ```
 
-tailfile: Display the last lines of a file.
+- **`terminate`**: Terminate a process.
 
-bash
+  ```
+  terminate [process id]
+  ```
 
-tailfile [filename]
+- **`viewjobs`**: List active background jobs.
 
-wordcount: Count words, lines, and characters in a file.
+  ```
+  viewjobs
+  ```
 
-bash
+- **`sendtoback`**: Send a job to the background.
 
-    wordcount [filename]
+  ```
+  sendtoback [job id]
+  ```
 
-Process Management
+- **`bringtofront`**: Bring a background job to the foreground.
 
-    showprocesses: Display running processes.
+  ```
+  bringtofront [job id]
+  ```
 
-    bash
+#### System Information
 
-showprocesses
+- **`where`**: Display the current working directory.
 
-terminate: Terminate a process.
+  ```
+  where
+  ```
 
-bash
+- **`whome`**: Show the current user.
 
-terminate [process id]
+  ```
+  whome
+  ```
 
-viewjobs: List active background jobs.
+- **`sysinfo`**: Display system information.
 
-bash
+  ```
+  sysinfo
+  ```
 
-viewjobs
+- **`systemname`**: Print system name and information.
 
-sendtoback: Send a job to the background.
+  ```
+  systemname
+  ```
 
-bash
+- **`today`**: Display the current date and time.
 
-sendtoback [job id]
+  ```
+  today
+  ```
 
-bringtofront: Bring a background job to the foreground.
+- **`calendar`**: Display the calendar.
 
-bash
+  ```
+  calendar
+  ```
 
-    bringtofront [job id]
+- **`diskusage`**: Display disk usage.
 
-System Information
+  ```
+  diskusage
+  ```
 
-    where: Display the current working directory.
+- **`diskfree`**: Display free disk space.
 
-    bash
+  ```
+  diskfree
+  ```
 
-where
+- **`cpuusage`**: Display CPU usage.
 
-whome: Show the current user.
+  ```
+  cpuusage
+  ```
 
-bash
+- **`memusage`**: Display memory usage.
 
-whome
+  ```
+  memusage
+  ```
 
-sysinfo: Display system information.
+#### Utilities
 
-bash
+- **`say`**: Display a line of text (similar to `echo`).
 
-sysinfo
+  ```
+  say [text]
+  ```
 
-systemname: Print system name and information.
+- **`searchfile`**: Search for files in a directory hierarchy.
 
-bash
+  ```
+  searchfile [filename]
+  ```
 
-systemname
+- **`searchtext`**: Search for a pattern in files.
 
-today: Display the current date and time.
+  ```
+  searchtext [pattern] [file]
+  ```
 
-bash
+- **`fetchurl`**: Fetch content from a URL.
 
-today
+  ```
+  fetchurl [URL]
+  ```
 
-calendar: Display the calendar.
+- **`pinghost`**: Ping a host to check connectivity.
 
-bash
+  ```
+  pinghost [hostname]
+  ```
 
-calendar
+- **`visualize`**: Visualize the command flow.
 
-diskusage: Display disk usage.
+  ```
+  visualize [command]
+  ```
 
-bash
+- **`repeat`**: Repeat a command multiple times.
 
-diskusage
+  ```
+  repeat [count] [command]
+  ```
 
-diskfree: Display free disk space.
+#### Alias and Environment Variable Management
 
-bash
+- **`makealias`**: Create a command alias.
 
-diskfree
+  ```
+  makealias [alias_name] [command]
+  ```
 
-cpuusage: Display CPU usage.
+- **`removealias`**: Remove a command alias.
 
-bash
+  ```
+  removealias [alias_name]
+  ```
 
-cpuusage
+- **`aliases`**: List all aliases.
 
-memusage: Display memory usage.
+  ```
+  aliases
+  ```
 
-bash
+- **`setenv`**: Set an environment variable.
 
-    memusage
+  ```
+  setenv [VAR] [VALUE]
+  ```
 
-Utilities
+- **`unsetenv`**: Unset an environment variable.
 
-    say: Display a line of text (similar to echo).
+  ```
+  unsetenv [VAR]
+  ```
 
-    bash
+- **`printenv`**: Print all environment variables.
 
-say [text]
+  ```
+  printenv
+  ```
 
-searchfile: Search for files in a directory hierarchy.
+#### Session Management
 
-bash
+- **`save`**: Save the current session history.
 
-searchfile [filename]
+  ```
+  save
+  ```
 
-searchtext: Search for a pattern in files.
+- **`load`**: Load a saved session history.
 
-bash
+  ```
+  load
+  ```
 
-searchtext [pattern] [file]
+- **`bookmark`**: Bookmark a command.
 
-fetchurl: Fetch content from a URL.
+  ```
+  bookmark [command]
+  ```
 
-bash
+- **`listbookmarks`**: List all bookmarked commands.
 
-fetchurl [URL]
+  ```
+  listbookmarks
+  ```
 
-pinghost: Ping a host to check connectivity.
+- **`commands`**: Show command history.
 
-bash
+  ```
+  commands
+  ```
 
-pinghost [hostname]
+- **`history_clear`**: Clear command history.
 
-visualize: Visualize the command flow.
+  ```
+  history_clear
+  ```
 
-bash
+#### Miscellaneous Commands
 
-visualize [command]
+- **`clear`**: Clear the terminal screen.
 
-repeat: Repeat a command multiple times.
+  ```
+  clear
+  ```
 
-bash
+- **`howto`**: Display help for commands.
 
-    repeat [count] [command]
+  ```
+  howto
+  ```
 
-Alias and Environment Variable Management
+- **`sudo`**: Run a command as root.
 
-    makealias: Create a command alias.
+  ```
+  sudo [command]
+  ```
 
-    bash
+- **`sudo_su`**: Switch to root shell within RazzShell.
 
-makealias [alias_name] [command]
+  ```
+  sudo su
+  ```
 
-removealias: Remove a command alias.
+- **`quit`**: Exit the shell.
 
-bash
+  ```
+  quit
+  ```
 
-removealias [alias_name]
+---
 
-aliases: List all aliases.
-
-bash
-
-aliases
-
-setenv: Set an environment variable.
-
-bash
-
-setenv [VAR] [VALUE]
-
-unsetenv: Unset an environment variable.
-
-bash
-
-unsetenv [VAR]
-
-printenv: Print all environment variables.
-
-bash
-
-    printenv
-
-Session Management
-
-    save: Save the current session history.
-
-    bash
-
-save
-
-load: Load a saved session history.
-
-bash
-
-load
-
-bookmark: Bookmark a command.
-
-bash
-
-bookmark [command]
-
-listbookmarks: List all bookmarked commands.
-
-bash
-
-listbookmarks
-
-commands: Show command history.
-
-bash
-
-commands
-
-history_clear: Clear command history.
-
-bash
-
-    history_clear
-
-Miscellaneous Commands
-
-    clear: Clear the terminal screen.
-
-    bash
-
-clear
-
-howto: Display help for commands.
-
-bash
-
-howto
-
-sudo: Run a command as root.
-
-bash
-
-sudo [command]
-
-sudo_su: Switch to root shell within RazzShell.
-
-bash
-
-sudo su
-
-quit: Exit the shell.
-
-bash
-
-    quit
-
-External Commands
+### External Commands
 
 RazzShell supports executing external programs installed on your system. If a command is not recognized as a built-in command, RazzShell will attempt to execute it as an external command.
 
-Example:
+**Example:**
 
-bash
-
+```
 razzshell-$ [directory]> nano filename.txt
+```
 
-Signal Handling
+---
 
-    Ctrl+C: Interrupts the current command but keeps the shell running.
-    Ctrl+D: Exits the shell.
+## Examples
 
-Examples
+**Changing Directory:**
 
-    Changing Directory:
-
-    bash
-
+```
 razzshell-$ [directory]> change /path/to/directory
+```
 
-Listing Files with Colors:
+**Listing Files with Colors:**
 
-bash
-
+```
 razzshell-$ [directory]> list
+```
 
-Listing All Files Including Hidden Files:
+**Listing All Files Including Hidden Files:**
 
-bash
-
+```
 razzshell-$ [directory]> list -a
+```
 
-Creating and Using an Alias:
+**Creating and Using an Alias:**
 
-bash
-
+```
 razzshell-$ [directory]> makealias ll list
 razzshell-$ [directory]> ll
+```
 
-Setting and Using an Environment Variable:
+**Setting and Using an Environment Variable:**
 
-bash
-
+```
 razzshell-$ [directory]> setenv MYVAR HelloWorld
 razzshell-$ [directory]> say $MYVAR
+```
 
-Repeating a Command:
+**Repeating a Command:**
 
-bash
-
+```
 razzshell-$ [directory]> repeat 5 say "Hello, World!"
+```
 
-Elevating to Root User within RazzShell:
+**Elevating to Root User within RazzShell:**
 
-bash
-
+```
 razzshell-$ [directory]> sudo su
 [sudo] password for user:
 razzshell-# [directory]>
+```
 
-Exiting the Shell:
+**Exiting the Shell:**
 
-bash
+```
+razzshell-$ [directory]> quit
+```
 
-    razzshell-$ [directory]> quit
+---
 
-License
+## License
 
 RazzShell is released under the MIT License.
 
-Disclaimer: Use RazzShell at your own risk. The author is not responsible for any damage or data loss resulting from the use of this shell.
+**Disclaimer:** Use RazzShell at your own risk. The author is not responsible for any damage or data loss resulting from the use of this shell.
+
+---
+
+**Note:** If you encounter errors related to `readline` during compilation, ensure that the readline library is installed on your system.
+
+---
+
+**Thank you for choosing RazzShell!**
