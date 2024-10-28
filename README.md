@@ -72,7 +72,7 @@ Steps
 
     bash
 
-git clone https://github.com/yourusername/razzshell.git
+git clone https://github.com/rajacharya987/razzshell.git
 
 Navigate to the Directory
 
