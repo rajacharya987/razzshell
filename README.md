@@ -504,3 +504,5 @@ bash
 License
 
 RazzShell is released under the MIT License.
+
+Disclaimer: Use RazzShell at your own risk. The author is not responsible for any damage or data loss resulting from the use of this shell.
