@@ -2,13 +2,13 @@
 pkgname=razzshell
 pkgver=1.0.0
 pkgrel=1
-pkgdesc="A costom Unix shell with unique features"
+pkgdesc="A custom Unix shell with unique features"
 arch=('x86_64')
-url="https://github.com/rajacharya987/razzshell.git"
+url="https://github.com/rajacharya987/razzshell"
 license=('MIT')
 depends=('readline')
-source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('your_generated_checksum')
 
 build() {
     cd "$srcdir/$pkgname-$pkgver"
