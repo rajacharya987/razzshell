@@ -8,6 +8,7 @@ RazzShell is a custom Unix shell written in C, designed to provide a unique and 
 ## Table of Contents
 
 - [Features](#features)
+- [Structure Map](#Structure Map)
 - [Differences Between RazzShell and Other Shells](#differences-between-razzshell-and-other-shells)
 - [Installation](#installation)
   - [Prerequisites](#prerequisites)
@@ -61,6 +62,8 @@ RazzShell distinguishes itself from other Unix shells like Bash, Zsh, and Fish b
 - **Root Shell Integration**: RazzShell allows users to elevate to a root shell within the shell itself, maintaining the shell environment and features.
 
 ---
+
+## Structure Map
 ![Alt text](images/map.png)
 
 ## Installation
