@@ -12,7 +12,7 @@ sha256sums=('your_generated_checksum')
 
 build() {
     cd "$srcdir/$pkgname-$pkgver"
-    gcc -o razzshell razzshell.c -lreadline
+    gcc -o razzshell razzshell.c -lreadline -ldl
 }
 
 package() {
