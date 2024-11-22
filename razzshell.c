@@ -16,6 +16,7 @@
 #include <sys/utsname.h>
 #include <grp.h>
 #include <termios.h>
+#include <dlfcn.h>
 
 #define MAX_ARGS 128
 #define MAX_JOBS 100
@@ -24,15 +25,15 @@
 #define MAX_ALIASES 100
 
 // Color codes
-#define RESET_COLOR "\x1b[0m"
-#define GREEN_COLOR "\x1b[32m"
-#define BLUE_COLOR  "\x1b[34m"
-#define CYAN_COLOR  "\x1b[36m"
-#define RED_COLOR   "\x1b[31m"
-#define YELLOW_COLOR "\x1b[33m"
+#define RESET_COLOR   "\x1b[0m"
+#define GREEN_COLOR   "\x1b[32m"
+#define BLUE_COLOR    "\x1b[34m"
+#define CYAN_COLOR    "\x1b[36m"
+#define RED_COLOR     "\x1b[31m"
+#define YELLOW_COLOR  "\x1b[33m"
 #define MAGENTA_COLOR "\x1b[35m"
 
-#define BOLD_TEXT "\x1b[1m"
+#define BOLD_TEXT      "\x1b[1m"
 #define UNDERLINE_TEXT "\x1b[4m"
 
 // Job structure to manage background jobs
@@ -42,6 +43,16 @@ typedef struct {
     char command[256];
     int is_background;
 } Job;
+
+// Plugin structure
+typedef struct {
+    char *name;
+    void *handle;
+    int (*command_func)(char **args);
+} Plugin;
+
+Plugin plugins[MAX_ALIASES]; // Reuse the MAX_ALIASES constant for simplicity
+int plugin_count = 0;
 
 // Alias structure
 typedef struct {
@@ -57,6 +68,13 @@ char *bookmarks[MAX_BOOKMARKS];
 int bookmark_count = 0;
 Alias aliases[MAX_ALIASES];
 int alias_count = 0;
+// Forward declarations
+char **razzshell_completion(const char *text, int start, int end);
+char *command_generator(const char *text, int state);
+char *get_command_name(int index);
+void initialize_readline();
+char *read_input_line();
+char *get_prompt();
 
 // Signal handling variables
 struct termios shell_tmodes;
@@ -117,6 +135,8 @@ int razz_aliases(char **args);      // list aliases
 int razz_unsetenv(char **args);     // unset environment variable
 int razz_repeat(char **args);       // repeat command
 int razz_history_clear(char **args);// clear history
+int razz_loadplugin(char **args);   // Load a plugin
+int razz_unloadplugin(char **args); // Unload a plugin
 
 // Command-to-function mapping
 typedef struct {
@@ -127,6 +147,8 @@ typedef struct {
 
 CommandMap command_list[] = {
     {"change", razz_change, "Change directory"},                      // cd
+    {"loadplugin", razz_loadplugin, "Load a plugin"},                 // loadplugin
+    {"unloadplugin", razz_unloadplugin, "Unload a plugin"},           // unloadplugin
     {"quit", razz_quit, "Exit the shell"},                            // exit
     {"say", razz_say, "Display a line of text"},                      // echo
     {"where", razz_where, "Print working directory"},                 // pwd
@@ -193,6 +215,65 @@ char* check_alias(char *cmd) {
     return cmd;
 }
 
+// Load a plugin
+int razz_loadplugin(char **args) {
+    if (args[1] == NULL) {
+        fprintf(stderr, "Usage: loadplugin [plugin_path]\n");
+        return 1;
+    }
+
+    if (plugin_count >= MAX_ALIASES) {
+        fprintf(stderr, "Plugin limit reached.\n");
+        return 1;
+    }
+
+    void *handle = dlopen(args[1], RTLD_LAZY);
+    if (!handle) {
+        fprintf(stderr, "Error loading plugin: %s\n", dlerror());
+        return 1;
+    }
+
+    int (*command_func)(char **args) = dlsym(handle, "plugin_command");
+    char *error = dlerror();
+    if (error != NULL) {
+        fprintf(stderr, "Error finding symbol: %s\n", error);
+        dlclose(handle);
+        return 1;
+    }
+
+    plugins[plugin_count].name = strdup(args[1]);
+    plugins[plugin_count].handle = handle;
+    plugins[plugin_count].command_func = command_func;
+    plugin_count++;
+
+    printf("Plugin '%s' loaded.\n", args[1]);
+    return 1;
+}
+
+// Unload a plugin
+int razz_unloadplugin(char **args) {
+    if (args[1] == NULL) {
+        fprintf(stderr, "Usage: unloadplugin [plugin_name]\n");
+        return 1;
+    }
+
+    for (int i = 0; i < plugin_count; i++) {
+        if (strcmp(args[1], plugins[i].name) == 0) {
+            dlclose(plugins[i].handle);
+            free(plugins[i].name);
+            for (int j = i; j < plugin_count - 1; j++) {
+                plugins[j] = plugins[j + 1];
+            }
+            plugin_count--;
+            printf("Plugin '%s' unloaded.\n", args[1]);
+            return 1;
+        }
+    }
+
+    fprintf(stderr, "Plugin '%s' not found.\n", args[1]);
+    return 1;
+}
+
 // Generate the shell prompt
 char* get_prompt() {
     char cwd[1024];
@@ -227,14 +308,98 @@ void remove_job(pid_t pid) {
 }
 
 // Signal handlers
-void sigint_handler(int sig) {
-    // Do nothing
+void sigint_handler(int signo) {
+    // Reset Readline state
+    rl_replace_line("", 0);
+    rl_on_new_line();
     printf("\n");
+    rl_redisplay();
 }
 
 void sigtstp_handler(int sig) {
-    // Do nothing
-    printf("\n");
+    // Ignore SIGTSTP
+}
+
+// Initialize Readline
+void initialize_readline() {
+    rl_readline_name = "razzshell";
+    rl_attempted_completion_function = razzshell_completion;
+}
+// Command generator for completion
+char *get_command_name(int index) {
+    int built_in_count = sizeof(command_list) / sizeof(CommandMap);
+    if (index < built_in_count) {
+        return command_list[index].command_name;
+    }
+    index -= built_in_count;
+    if (index < alias_count) {
+        return aliases[index].alias_name;
+    }
+    index -= alias_count;
+    if (index < plugin_count) {
+        return plugins[index].name;
+    }
+    return NULL;
+}
+
+char *command_generator(const char *text, int state) {
+    static int list_index, len;
+    char *command_name;
+
+    if (state == 0) {
+        list_index = 0;
+        len = strlen(text);
+    }
+
+    while ((command_name = get_command_name(list_index)) != NULL) {
+        list_index++;
+        if (strncmp(command_name, text, len) == 0) {
+            return strdup(command_name);
+        }
+    }
+    return NULL;
+}
+char *read_input_line() {
+    char *line = readline(get_prompt());
+    if (line && *line) {
+        add_history(line);
+    }
+    return line;
+}
+
+char *history_generator(const char *text, int state) {
+    static int history_index;
+    HIST_ENTRY **hist_list = history_list();
+
+    if (!hist_list) {
+        return NULL;
+    }
+
+    if (state == 0) {
+        history_index = history_length;
+    }
+
+    while (--history_index >= 0) {
+        char *cmd = hist_list[history_index]->line;
+        if (strncmp(cmd, text, strlen(text)) == 0) {
+            return strdup(cmd);
+        }
+    }
+    return NULL;
+}
+// Completion function
+char **razzshell_completion(const char *text, int start, int end) {
+    char **matches = NULL;
+
+    // If this is the first word, offer command completions
+    if (start == 0) {
+        matches = rl_completion_matches(text, command_generator);
+    } else {
+        // For other words, perform default file completion
+        rl_attempted_completion_over = 0;
+        matches = NULL;
+    }
+    return matches;
 }
 
 // Command implementations
@@ -667,10 +832,11 @@ int razz_sudo(char **args) {
     // Build the command array
     char *sudo_args[MAX_ARGS];
     sudo_args[0] = "sudo";
-    for (int i = 1; args[i] != NULL && i < MAX_ARGS - 1; i++) {
+    int i;
+    for (i = 1; args[i] != NULL && i < MAX_ARGS - 1; i++) {
         sudo_args[i] = args[i];
     }
-    sudo_args[MAX_ARGS - 1] = NULL;
+    sudo_args[i] = NULL;
 
     pid_t pid = fork();
     if (pid == 0) {
@@ -1073,7 +1239,7 @@ int razz_repeat(char **args) {
         char *cmd_args[MAX_ARGS];
         cmd_args[0] = command;
         int idx = 1;
-        for (int j = 3; args[j] != NULL; j++) {
+        for (int j = 3; args[j] != NULL && idx < MAX_ARGS - 1; j++) {
             cmd_args[idx++] = args[j];
         }
         cmd_args[idx] = NULL;
@@ -1167,10 +1333,10 @@ void razzshell_loop() {
         int position = 0;
         char *token = strtok(input, " \t\r\n");
 
-        while (token != NULL) {
+        while (token != NULL && position < MAX_ARGS - 1) {
             // Check for aliases
-            token = check_alias(token);
-            args[position++] = token;
+            char *alias_cmd = check_alias(token);
+            args[position++] = alias_cmd;
             token = strtok(NULL, " \t\r\n");
         }
         args[position] = NULL;
@@ -1186,6 +1352,17 @@ void razzshell_loop() {
                 for (int i = 0; i < sizeof(command_list) / sizeof(CommandMap); i++) {
                     if (strcmp(args[0], command_list[i].command_name) == 0) {
                         status = command_list[i].command_func(args);
+                        found = 1;
+                        break;
+                    }
+                }
+            }
+
+            if (!found) {
+                // Check for plugin commands
+                for (int i = 0; i < plugin_count; i++) {
+                    if (strcmp(args[0], plugins[i].name) == 0) {
+                        status = plugins[i].command_func(args);
                         found = 1;
                         break;
                     }
@@ -1209,9 +1386,9 @@ void razzshell_loop() {
                     printf(RED_COLOR "%s: command not found\n" RESET_COLOR, args[0]);
                     exit(EXIT_FAILURE);
                 } else if (pid > 0) {
-                    int status;
+                    int child_status;
                     // Wait for the child process
-                    waitpid(pid, &status, WUNTRACED);
+                    waitpid(pid, &child_status, WUNTRACED);
 
                     // Give control back to the shell
                     tcsetpgrp(STDIN_FILENO, shell_pgid);
@@ -1229,7 +1406,7 @@ void razzshell_loop() {
 int main(int argc, char **argv) {
     // Initialize shell
     init_shell();
-
+    initialize_readline();
     rl_bind_key('\t', rl_complete);
     using_history();
 
