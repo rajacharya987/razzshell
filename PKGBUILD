@@ -1,6 +1,6 @@
 # Maintainer: Raj Acharya <razzacharya6@gmail.com>
 pkgname=razzshell
-pkgver=1.0.0
+pkgver=1.0.1
 pkgrel=1
 pkgdesc="A custom Unix shell with unique features"
 arch=('x86_64')
