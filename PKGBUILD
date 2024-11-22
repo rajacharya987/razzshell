@@ -8,7 +8,7 @@ url="https://github.com/rajacharya987/razzshell"
 license=('MIT')
 depends=('readline')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('29379c247df11e0d0410ac6a1185399790c43e845ac5a60215e8798bb23cdc78')
+sha256sums=('be9ba64369e90ea0633ebec1bdeec702e095196c0158253af26d78b816fccc44')
 
 build() {
     cd "$srcdir/$pkgname-$pkgver"
