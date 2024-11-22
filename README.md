@@ -70,14 +70,14 @@ RazzShell distinguishes itself from other Unix shells like Bash, Zsh, and Fish b
 sudo apt-get update
 sudo apt-get install build-essential libreadline-dev
 On Fedora:
-
+bash
 
 
 
  
 sudo dnf install gcc make readline-devel
 On Arch Linux:
-
+bash
 
 
 
@@ -85,28 +85,28 @@ On Arch Linux:
 sudo pacman -S base-devel readline
 Installing on Ubuntu/Debian
 Clone the Repository:
-
+bash
 
 
 
  
 git clone https://github.com/rajacharya987/razzshell.git
 Navigate to the Directory:
-
+bash
 
 
 
  
 cd razzshell
 Compile the Source Code:
-
+bash
 
 
 
  
 gcc -o razzshell razzshell.c -lreadline -ldl
 Install RazzShell:
-
+bash
 
 
 
@@ -115,28 +115,28 @@ sudo cp razzshell /usr/local/bin/
 sudo chmod +x /usr/local/bin/razzshell
 Installing on Fedora
 Clone the Repository:
-
+bash
 
 
 
  
 git clone https://github.com/rajacharya987/razzshell.git
 Navigate to the Directory:
-
+bash
 
 
 
  
 cd razzshell
 Compile the Source Code:
-
+bash
 
 
 
  
 gcc -o razzshell razzshell.c -lreadline -ldl
 Install RazzShell:
-
+bash
 
 
 
@@ -147,7 +147,7 @@ Installing on Arch Linux
 Option 1: Using yay (AUR Helper)
 If you have yay installed, you can install RazzShell directly from the AUR:
 
-
+bash
 
 
 
@@ -155,28 +155,28 @@ If you have yay installed, you can install RazzShell directly from the AUR:
 yay -S razzshell
 Option 2: Building from Source
 Clone the Repository:
-
+bash
 
 
 
  
 git clone https://github.com/rajacharya987/razzshell.git
 Navigate to the Directory:
-
+bash
 
 
 
  
 cd razzshell
 Compile the Source Code:
-
+bash
 
 
 
  
 gcc -o razzshell razzshell.c -lreadline -ldl
 Install RazzShell:
-
+bash
 
 
 
@@ -187,7 +187,7 @@ Usage
 Starting RazzShell
 Run the compiled executable:
 
-
+bash
 
 
 
@@ -208,14 +208,14 @@ The prompt displays the shell type ($ for regular users, # for root) and the cur
 Built-in Commands
 File and Directory Operations
 change: Change the current working directory.
-
+bash
 
 
 
  
 change [directory]
 list: List directory contents with color-coded output.
-
+bash
 
 
 
@@ -225,70 +225,70 @@ list [-a] [directory]
 
 copy: Copy files from one location to another.
 
-
+bash
 
 
 
  
 copy [source] [destination]
 move: Move or rename files.
-
+bash
 
 
 
  
 move [source] [destination]
 delete: Delete files.
-
+bash
 
 
 
  
 delete [file]
 makedir: Create a new directory.
-
+bash
 
 
 
  
 makedir [directory]
 removedir: Remove an empty directory.
-
+bash
 
 
 
  
 removedir [directory]
 create: Create a new file.
-
+bash
 
 
 
  
 create [filename]
 readfile: Display the contents of a file.
-
+bash
 
 
 
  
 readfile [filename]
 headfile: Display the first lines of a file.
-
+bash
 
 
 
  
 headfile [filename]
 tailfile: Display the last lines of a file.
-
+bash
 
 
 
  
 tailfile [filename]
 wordcount: Count words, lines, and characters in a file.
-
+bash
 
 
 
@@ -296,35 +296,35 @@ wordcount: Count words, lines, and characters in a file.
 wordcount [filename]
 Process Management
 showprocesses: Display running processes.
-
+bash
 
 
 
  
 showprocesses
 terminate: Terminate a process.
-
+bash
 
 
 
  
 terminate [process id]
 viewjobs: List active background jobs.
-
+bash
 
 
 
  
 viewjobs
 sendtoback: Send a job to the background.
-
+bash
 
 
 
  
 sendtoback [job id]
 bringtofront: Bring a background job to the foreground.
-
+bash
 
 
 
@@ -332,70 +332,70 @@ bringtofront: Bring a background job to the foreground.
 bringtofront [job id]
 System Information
 where: Display the current working directory.
-
+bash
 
 
 
  
 where
 whome: Show the current user.
-
+bash
 
 
 
  
 whome
 sysinfo: Display system information.
-
+bash
 
 
 
  
 sysinfo
 systemname: Print system name and information.
-
+bash
 
 
 
  
 systemname
 today: Display the current date and time.
-
+bash
 
 
 
  
 today
 calendar: Display the calendar.
-
+bash
 
 
 
  
 calendar
 diskusage: Display disk usage.
-
+bash
 
 
 
  
 diskusage
 diskfree: Display free disk space.
-
+bash
 
 
 
  
 diskfree
 cpuusage: Display CPU usage.
-
+bash
 
 
 
  
 cpuusage
 memusage: Display memory usage.
-
+bash
 
 
 
@@ -403,49 +403,49 @@ memusage: Display memory usage.
 memusage
 Utilities
 say: Display a line of text (similar to echo).
-
+bash
 
 
 
  
 say [text]
 searchfile: Search for files in a directory hierarchy.
-
+bash
 
 
 
  
 searchfile [filename]
 searchtext: Search for a pattern in files.
-
+bash
 
 
 
  
 searchtext [pattern] [file]
 fetchurl: Fetch content from a URL.
-
+bash
 
 
 
  
 fetchurl [URL]
 pinghost: Ping a host to check connectivity.
-
+bash
 
 
 
  
 pinghost [hostname]
 visualize: Visualize the command flow.
-
+bash
 
 
 
  
 visualize [command]
 repeat: Repeat a command multiple times.
-
+bash
 
 
 
@@ -453,42 +453,42 @@ repeat: Repeat a command multiple times.
 repeat [count] [command]
 Alias and Environment Variable Management
 makealias: Create a command alias.
-
+bash
 
 
 
  
 makealias [alias_name] [command]
 removealias: Remove a command alias.
-
+bash
 
 
 
  
 removealias [alias_name]
 aliases: List all aliases.
-
+bash
 
 
 
  
 aliases
 setenv: Set an environment variable.
-
+bash
 
 
 
  
 setenv [VAR] [VALUE]
 unsetenv: Unset an environment variable.
-
+bash
 
 
 
  
 unsetenv [VAR]
 printenv: Print all environment variables.
-
+bash
 
 
 
@@ -496,42 +496,42 @@ printenv: Print all environment variables.
 printenv
 Session Management
 save: Save the current session history.
-
+bash
 
 
 
  
 save
 load: Load a saved session history.
-
+bash
 
 
 
  
 load
 bookmark: Bookmark a command.
-
+bash
 
 
 
  
 bookmark [command]
 listbookmarks: List all bookmarked commands.
-
+bash
 
 
 
  
 listbookmarks
 commands: Show command history.
-
+bash
 
 
 
  
 commands
 history_clear: Clear command history.
-
+bash
 
 
 
@@ -539,35 +539,35 @@ history_clear: Clear command history.
 history_clear
 Miscellaneous Commands
 clear: Clear the terminal screen.
-
+bash
 
 
 
  
 clear
 howto: Display help for commands.
-
+bash
 
 
 
  
 howto
 sudo: Run a command as root.
-
+bash
 
 
 
  
 sudo [command]
 sudo_su: Switch to root shell within RazzShell.
-
+bash
 
 
 
  
 sudo su
 quit: Exit the shell.
-
+bash
 
 
 
@@ -578,7 +578,7 @@ RazzShell supports executing external programs installed on your system. If a co
 
 Example:
 
-
+bash
 
 
 
@@ -587,7 +587,7 @@ razzshell-$ [directory]> nano filename.txt
 Examples
 Changing Directory:
 
-
+bash
 
 
 
@@ -595,7 +595,7 @@ Changing Directory:
 razzshell-$ [directory]> change /path/to/directory
 Listing Files with Colors:
 
-
+bash
 
 
 
@@ -603,7 +603,7 @@ Listing Files with Colors:
 razzshell-$ [directory]> list
 Listing All Files Including Hidden Files:
 
-
+bash
 
 
 
@@ -611,7 +611,7 @@ Listing All Files Including Hidden Files:
 razzshell-$ [directory]> list -a
 Creating and Using an Alias:
 
-
+bash
 
 
 
@@ -620,7 +620,7 @@ razzshell-$ [directory]> makealias ll list
 razzshell-$ [directory]> ll
 Setting and Using an Environment Variable:
 
-
+bash
 
 
 
@@ -629,7 +629,7 @@ razzshell-$ [directory]> setenv MYVAR HelloWorld
 razzshell-$ [directory]> say $MYVAR
 Repeating a Command:
 
-
+bash
 
 
 
@@ -637,18 +637,18 @@ Repeating a Command:
 razzshell-$ [directory]> repeat 5 say "Hello, World!"
 Elevating to Root User within RazzShell:
 
-
+bash
 
 
 
  
- ```
+ ```bash
 razzshell-$ [directory]> sudo su
 [sudo] password for user:
 razzshell-# [directory]>
 Exiting the Shell:
 
-
+bash
 
 
 
