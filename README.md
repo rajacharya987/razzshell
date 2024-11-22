@@ -83,7 +83,7 @@ RazzShell distinguishes itself from other Unix shells like Bash, Zsh, and Fish b
 
 ```bash
 sudo apt-get update
-sudo apt-get install build-essential libreadline-dev
+sudo apt-get install build-essential libreadline-dev -ldl
 ```
 
 #### On Fedora:
