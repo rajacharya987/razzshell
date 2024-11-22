@@ -7,7 +7,7 @@ arch=('x86_64')
 url="https://github.com/rajacharya987/razzshell"
 license=('MIT')
 depends=('readline')
-source=("https://github.com/rajacharya987/razzshell/archive/refs/tags/v1.0.1.tar.gz")
+source=("https://github.com/rajacharya987/razzshell/releases/download/v1.0.1/razzshell-1.0.1.tar.gz")
 sha256sums=('be9ba64369e90ea0633ebec1bdeec702e095196c0158253af26d78b816fccc44')
 
 build() {
