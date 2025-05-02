@@ -17,6 +17,10 @@
 #include <grp.h>
 #include <termios.h>
 #include <dlfcn.h>
+#include <linux/limits.h> // For PATH_MAX
+#include <sys/select.h>
+#include <sys/time.h>
+#include <strings.h>
 
 #define MAX_ARGS 128
 #define MAX_JOBS 100
@@ -26,15 +30,54 @@
 
 // Color codes
 #define RESET_COLOR   "\x1b[0m"
-#define GREEN_COLOR   "\x1b[32m"
-#define BLUE_COLOR    "\x1b[34m"
-#define CYAN_COLOR    "\x1b[36m"
-#define RED_COLOR     "\x1b[31m"
-#define YELLOW_COLOR  "\x1b[33m"
-#define MAGENTA_COLOR "\x1b[35m"
+#define GREEN_COLOR   "\x1b[38;5;46m"    // Bright neon green
+#define BLUE_COLOR    "\x1b[38;5;33m"    // Bright cyan-blue
+#define CYAN_COLOR    "\x1b[38;5;51m"    // Electric cyan
+#define RED_COLOR     "\x1b[38;5;196m"   // Bright red
+#define YELLOW_COLOR  "\x1b[38;5;226m"   // Bright yellow
+#define MAGENTA_COLOR "\x1b[38;5;201m"   // Hot pink
+#define PURPLE_COLOR  "\x1b[38;5;93m"    // Deep purple
+#define ORANGE_COLOR  "\x1b[38;5;208m"   // Bright orange
 
+// Style codes
 #define BOLD_TEXT      "\x1b[1m"
 #define UNDERLINE_TEXT "\x1b[4m"
+#define BLINK_TEXT     "\x1b[5m"
+#define DIM_TEXT       "\x1b[2m"
+#define ITALIC_TEXT    "\x1b[3m"
+
+// Background colors
+#define BG_BLACK   "\x1b[40m"
+#define BG_BLUE    "\x1b[44m"
+#define BG_CYBER   "\x1b[48;5;17m"  // Dark blue background
+
+// Shell styling
+#define PROMPT_STYLE    BOLD_TEXT CYAN_COLOR
+#define ERROR_STYLE     BOLD_TEXT RED_COLOR
+#define SUCCESS_STYLE   BOLD_TEXT GREEN_COLOR
+#define WARNING_STYLE   BOLD_TEXT YELLOW_COLOR
+#define INFO_STYLE      BOLD_TEXT BLUE_COLOR
+#define CYBER_STYLE     BOLD_TEXT PURPLE_COLOR BG_CYBER
+
+// ASCII art frames
+#define TOP_BORDER    "╔════════════════════════════════════╗"
+#define BOTTOM_BORDER "╚════════════════════════════════════╝"
+#define SIDE_BORDER   "║"
+
+// Enhanced color gradients for cyber theme
+#define NEON_CYAN    "\x1b[38;5;51m"
+#define NEON_BLUE    "\x1b[38;5;33m"
+#define NEON_GREEN   "\x1b[38;5;46m"
+#define NEON_PINK    "\x1b[38;5;198m"
+#define NEON_PURPLE  "\x1b[38;5;141m"
+#define NEON_YELLOW  "\x1b[38;5;226m"
+#define NEON_ORANGE  "\x1b[38;5;214m"
+#define NEON_RED     "\x1b[38;5;196m"
+
+// Gradient backgrounds
+#define BG_DARK_BLUE  "\x1b[48;5;17m"
+#define BG_CYBER_ALT  "\x1b[48;5;23m"
+#define BG_CYBER_DIM  "\x1b[48;5;16m"
 
 // Job structure to manage background jobs
 typedef struct {
@@ -68,6 +111,13 @@ char *bookmarks[MAX_BOOKMARKS];
 int bookmark_count = 0;
 Alias aliases[MAX_ALIASES];
 int alias_count = 0;
+
+// Shell environment setup
+void setup_shell_env() {
+    setenv("SHELL", "/usr/local/bin/razzshell", 1);
+    setenv("RAZZSHELL_VERSION", "1.0.2", 1);
+}
+
 // Forward declarations
 char **razzshell_completion(const char *text, int start, int end);
 char *command_generator(const char *text, int state);
@@ -137,6 +187,12 @@ int razz_repeat(char **args);       // repeat command
 int razz_history_clear(char **args);// clear history
 int razz_loadplugin(char **args);   // Load a plugin
 int razz_unloadplugin(char **args); // Unload a plugin
+int razz_monitor(char **args);      // System resource monitor
+int razz_matrix(char **args);       // Matrix-style text effect
+int razz_sysart(char **args);       // System information with ASCII art
+int razz_clock(char **args);        // Digital clock
+int razz_fetch(char **args);        // RazzFetch (custom neofetch-style system info)
+int razz_history_search(char **args); // Enhanced history search
 
 // Command-to-function mapping
 typedef struct {
@@ -189,7 +245,7 @@ CommandMap command_list[] = {
     {"removealias", razz_removealias, "Remove a command alias"},      // unalias
     {"setenv", razz_setenv, "Set an environment variable"},           // set environment variable
     {"printenv", razz_printenv, "Print environment variables"},       // print environment variables
-    {"clear", razz_clear, "Clear the screen"},                        // clear screen
+    {"clear", razz_clear, "Clear the terminal screen"},
     {"today", razz_today, "Display current date and time"},           // date
     {"calendar", razz_calendar, "Display calendar"},                  // cal
     {"diskfree", razz_diskfree, "Display free disk space"},           // df
@@ -202,8 +258,373 @@ CommandMap command_list[] = {
     {"unsetenv", razz_unsetenv, "Unset an environment variable"},     // unset environment variable
     {"repeat", razz_repeat, "Repeat a command multiple times"},       // repeat command
     {"history_clear", razz_history_clear, "Clear command history"},   // clear history
+    {"monitor", razz_monitor, "Show system resource monitor"},
+    {"matrix", razz_matrix, "Display Matrix-style animation"},
+    {"sysart", razz_sysart, "Show system information with ASCII art"},
+    {"clock", razz_clock, "Show digital clock"},
+    {"razzfetch", razz_fetch, "Display system information in RazzShell style"},
+    {"hsearch", razz_history_search, "Search command history with highlighting"},
     // Add additional commands here as per your list
 };
+
+// File type icons for list command
+#define ICON_DIRECTORY "📁"
+#define ICON_FILE "📄"
+#define ICON_EXECUTABLE "⚡"
+#define ICON_IMAGE "🖼️"
+#define ICON_VIDEO "🎥"
+#define ICON_AUDIO "🎵"
+#define ICON_ARCHIVE "📦"
+#define ICON_TEXT "📝"
+#define ICON_PDF "📕"
+#define ICON_CONFIG "⚙️"
+#define ICON_LINK "🔗"
+
+// Function to get file icon based on extension and permissions
+const char* get_file_icon(const char* name, mode_t mode) {
+    if (S_ISDIR(mode)) return ICON_DIRECTORY;
+    if (S_ISLNK(mode)) return ICON_LINK;
+    if (mode & S_IXUSR) return ICON_EXECUTABLE;
+
+    // Get file extension
+    const char* ext = strrchr(name, '.');
+    if (!ext) return ICON_FILE;
+    ext++; // Skip the dot
+
+    // Common file extensions
+    if (strcasecmp(ext, "jpg") == 0 || strcasecmp(ext, "png") == 0 || 
+        strcasecmp(ext, "gif") == 0 || strcasecmp(ext, "bmp") == 0)
+        return ICON_IMAGE;
+    if (strcasecmp(ext, "mp4") == 0 || strcasecmp(ext, "avi") == 0 || 
+        strcasecmp(ext, "mkv") == 0)
+        return ICON_VIDEO;
+    if (strcasecmp(ext, "mp3") == 0 || strcasecmp(ext, "wav") == 0 || 
+        strcasecmp(ext, "flac") == 0)
+        return ICON_AUDIO;
+    if (strcasecmp(ext, "zip") == 0 || strcasecmp(ext, "tar") == 0 || 
+        strcasecmp(ext, "gz") == 0)
+        return ICON_ARCHIVE;
+    if (strcasecmp(ext, "txt") == 0 || strcasecmp(ext, "md") == 0 || 
+        strcasecmp(ext, "c") == 0 || strcasecmp(ext, "cpp") == 0 || 
+        strcasecmp(ext, "py") == 0 || strcasecmp(ext, "js") == 0)
+        return ICON_TEXT;
+    if (strcasecmp(ext, "pdf") == 0)
+        return ICON_PDF;
+    if (strcasecmp(ext, "conf") == 0 || strcasecmp(ext, "config") == 0 || 
+        strcasecmp(ext, "ini") == 0)
+        return ICON_CONFIG;
+
+    return ICON_FILE;
+}
+
+// Format size in human-readable format
+char* format_size(off_t size) {
+    static char buf[32];
+    const char* units[] = {"B", "K", "M", "G", "T"};
+    int unit = 0;
+    double size_d = size;
+
+    while (size_d >= 1024 && unit < 4) {
+        size_d /= 1024;
+        unit++;
+    }
+
+    if (unit == 0)
+        sprintf(buf, "%ld%s", (long)size_d, units[unit]);
+    else
+        sprintf(buf, "%.1f%s", size_d, units[unit]);
+
+    return buf;
+}
+
+// Format permissions in a readable format
+char* format_permissions(mode_t mode) {
+    static char perms[11];
+    strcpy(perms, "----------");
+
+    // File type
+    if (S_ISDIR(mode)) perms[0] = 'd';
+    else if (S_ISLNK(mode)) perms[0] = 'l';
+
+    // User permissions
+    if (mode & S_IRUSR) perms[1] = 'r';
+    if (mode & S_IWUSR) perms[2] = 'w';
+    if (mode & S_IXUSR) perms[3] = 'x';
+
+    // Group permissions
+    if (mode & S_IRGRP) perms[4] = 'r';
+    if (mode & S_IWGRP) perms[5] = 'w';
+    if (mode & S_IXGRP) perms[6] = 'x';
+
+    // Others permissions
+    if (mode & S_IROTH) perms[7] = 'r';
+    if (mode & S_IWOTH) perms[8] = 'w';
+    if (mode & S_IXOTH) perms[9] = 'x';
+
+    return perms;
+}
+
+// Improved list command with better organization and visuals
+int razz_list(char **args) {
+    DIR *dir;
+    struct dirent *entry;
+    struct stat file_stat;
+    char path[PATH_MAX];
+    char datestr[256];
+    struct passwd *pw;
+    struct group *gr;
+    
+    // Get target directory
+    const char *target_dir = args[1] ? args[1] : ".";
+    
+    dir = opendir(target_dir);
+    if (!dir) {
+        printf(ERROR_STYLE "Error: Could not open directory %s\n" RESET_COLOR, target_dir);
+        return 1;
+    }
+
+    // Print header with fancy border
+    printf(CYBER_STYLE "\n╭──────────────────────────────────────────────────────────────╮\n");
+    printf("│ " BOLD_TEXT "Directory Listing: %-43s" RESET_COLOR CYBER_STYLE "│\n", target_dir);
+    printf("├──────────────────────────────────────────────────────────────┤\n" RESET_COLOR);
+    
+    printf(BOLD_TEXT "%-2s %-10s %-8s %-8s %-6s %-19s %s\n" RESET_COLOR,
+           "", "Perms", "Owner", "Group", "Size", "Modified", "Name");
+    printf(DIM_TEXT "%-2s %-10s %-8s %-8s %-6s %-19s %s\n" RESET_COLOR,
+           "", "----------", "--------", "--------", "------", "-------------------", "--------------------");
+
+    // Store entries for sorting
+    typedef struct file_entry {
+        char name[256];
+        char perms[11];
+        char owner[32];
+        char group[32];
+        char size[32];
+        char date[64];
+        char icon[8];
+        int is_dir;
+    } FileEntry;
+
+    FileEntry entries[1024];
+    int entry_count = 0;
+
+    // Read directory entries
+    while ((entry = readdir(dir)) != NULL && entry_count < 1024) {
+        snprintf(path, sizeof(path), "%s/%s", target_dir, entry->d_name);
+        
+        if (lstat(path, &file_stat) < 0)
+            continue;
+
+        // Skip hidden files unless -a flag is present
+        if (entry->d_name[0] == '.' && (!args[1] || strcmp(args[1], "-a") != 0))
+            continue;
+
+        // Get owner and group names
+        pw = getpwuid(file_stat.st_uid);
+        gr = getgrgid(file_stat.st_gid);
+
+        // Format modification time
+        strftime(datestr, sizeof(datestr), "%Y-%m-%d %H:%M", localtime(&file_stat.st_mtime));
+
+        // Store entry information
+        FileEntry *current = &entries[entry_count];
+        strncpy(current->name, entry->d_name, sizeof(current->name) - 1);
+        strncpy(current->perms, format_permissions(file_stat.st_mode), sizeof(current->perms) - 1);
+        strncpy(current->owner, pw ? pw->pw_name : "unknown", sizeof(current->owner) - 1);
+        strncpy(current->group, gr ? gr->gr_name : "unknown", sizeof(current->group) - 1);
+        strncpy(current->size, format_size(file_stat.st_size), sizeof(current->size) - 1);
+        strncpy(current->date, datestr, sizeof(current->date) - 1);
+        strncpy(current->icon, get_file_icon(entry->d_name, file_stat.st_mode), sizeof(current->icon) - 1);
+        current->is_dir = S_ISDIR(file_stat.st_mode);
+
+        entry_count++;
+    }
+
+    // Sort entries (directories first, then files alphabetically)
+    for (int i = 0; i < entry_count - 1; i++) {
+        for (int j = 0; j < entry_count - i - 1; j++) {
+            if ((entries[j].is_dir < entries[j + 1].is_dir) ||
+                (entries[j].is_dir == entries[j + 1].is_dir && 
+                 strcasecmp(entries[j].name, entries[j + 1].name) > 0)) {
+                FileEntry temp = entries[j];
+                entries[j] = entries[j + 1];
+                entries[j + 1] = temp;
+            }
+        }
+    }
+
+    // Print entries with alternating background colors for better readability
+    for (int i = 0; i < entry_count; i++) {
+        const char *bg_color = (i % 2 == 0) ? "" : BG_CYBER;
+        if (entries[i].is_dir) {
+            printf("%s%-2s " BLUE_COLOR "%-10s %-8s %-8s %-6s %-19s %s%s" RESET_COLOR "\n",
+                   bg_color, entries[i].icon, entries[i].perms, entries[i].owner,
+                   entries[i].group, entries[i].size, entries[i].date, 
+                   entries[i].name, S_ISLNK(file_stat.st_mode) ? " -> " : "");
+        } else {
+            printf("%s%-2s %-10s %-8s %-8s %-6s %-19s %s%s" RESET_COLOR "\n",
+                   bg_color, entries[i].icon, entries[i].perms, entries[i].owner,
+                   entries[i].group, entries[i].size, entries[i].date, 
+                   entries[i].name, S_ISLNK(file_stat.st_mode) ? " -> " : "");
+        }
+    }
+
+    // Print footer with summary
+    printf(CYBER_STYLE "├──────────────────────────────────────────────────────────────┤\n");
+    printf("│ " BOLD_TEXT "Total: %d items" RESET_COLOR CYBER_STYLE "%-43s│\n", entry_count, "");
+    printf("╰──────────────────────────────────────────────────────────────╯\n" RESET_COLOR);
+    
+    closedir(dir);
+    return 1;
+}
+
+// Enhanced RazzFetch with better visuals
+int razz_fetch(char **args) {
+    struct utsname sys_info;
+    if (uname(&sys_info) == -1) {
+        printf(ERROR_STYLE "Error getting system information\n" RESET_COLOR);
+        return 1;
+    }
+
+    // Get username and hostname
+    char hostname[1024];
+    struct passwd *pw = getpwuid(getuid());
+    gethostname(hostname, sizeof(hostname));
+
+    // Get memory information
+    long total_mem = 0, available_mem = 0;
+    FILE *meminfo = fopen("/proc/meminfo", "r");
+    if (meminfo) {
+        char line[256];
+        while (fgets(line, sizeof(line), meminfo)) {
+            if (strncmp(line, "MemTotal:", 9) == 0)
+                sscanf(line, "MemTotal: %ld", &total_mem);
+            else if (strncmp(line, "MemAvailable:", 12) == 0)
+                sscanf(line, "MemAvailable: %ld", &available_mem);
+        }
+        fclose(meminfo);
+    }
+
+    // Get CPU info
+    char cpu_model[256] = "Unknown";
+    FILE *cpuinfo = fopen("/proc/cpuinfo", "r");
+    if (cpuinfo) {
+        char line[256];
+        while (fgets(line, sizeof(line), cpuinfo)) {
+            if (strncmp(line, "model name", 10) == 0) {
+                char *colon = strchr(line, ':');
+                if (colon) {
+                    strncpy(cpu_model, colon + 2, sizeof(cpu_model) - 1);
+                    char *newline = strchr(cpu_model, '\n');
+                    if (newline) *newline = '\0';
+                }
+                break;
+            }
+        }
+        fclose(cpuinfo);
+    }
+
+    // Get package count (pacman)
+    int pacman_count = 0;
+    FILE *pacman = popen("pacman -Q | wc -l", "r");
+    if (pacman) {
+        fscanf(pacman, "%d", &pacman_count);
+        pclose(pacman);
+    }
+
+    // Get desktop environment
+    char *desktop_env = getenv("XDG_CURRENT_DESKTOP");
+    if (!desktop_env) desktop_env = "Unknown";
+
+    // Get GPU info
+    char gpu_info[256] = "Unknown";
+    FILE *lspci = popen("lspci | grep -i vga | head -n1 | cut -d ':' -f3", "r");
+    if (lspci) {
+        fgets(gpu_info, sizeof(gpu_info), lspci);
+        char *newline = strchr(gpu_info, '\n');
+        if (newline) *newline = '\0';
+        pclose(lspci);
+    }
+
+    // Get uptime
+    long uptime = 0;
+    FILE *uptime_file = fopen("/proc/uptime", "r");
+    if (uptime_file) {
+        fscanf(uptime_file, "%ld", &uptime);
+        fclose(uptime_file);
+    }
+    int days = uptime / 86400;
+    int hours = (uptime % 86400) / 3600;
+    int minutes = (uptime % 3600) / 60;
+
+    // Clear screen and move cursor to top
+    printf("\033[2J\033[H");
+
+    // Print RazzShell logo with gradient effect
+    printf(NEON_CYAN "    ╭─────────────╮\n");
+    printf("    │ " NEON_PINK "R" NEON_PURPLE "A" NEON_BLUE "Z" NEON_CYAN "Z" 
+           NEON_GREEN "S" NEON_YELLOW "H" NEON_ORANGE "E" NEON_PINK "L" 
+           NEON_PURPLE "L" NEON_CYAN " │\n");
+    printf("    ╰─────────────╯\n\n");
+
+    // Print system information in a fancy box
+    printf(NEON_CYAN "╭────────────────────── " NEON_PINK "System Information" 
+           NEON_CYAN " ──────────────────────╮\n");
+
+    // User@Host with custom art
+    printf("│ " NEON_BLUE "%s" NEON_PINK "@" NEON_BLUE "%s" NEON_CYAN "%*s│\n",
+           pw->pw_name, hostname, 
+           (int)(50 - strlen(pw->pw_name) - strlen(hostname) - 1), "");
+
+    // Separator
+    printf("├──────────────────────────────────────────────────────────────┤\n");
+
+    // System information with custom styling and progress bars
+    printf("│ " NEON_GREEN "OS        " RESET_COLOR "%-48s" NEON_CYAN "│\n", sys_info.sysname);
+    printf("│ " NEON_BLUE "Shell     " RESET_COLOR "RazzShell v1.0.2%35s" NEON_CYAN "│\n", "");
+    printf("│ " NEON_YELLOW "Kernel    " RESET_COLOR "%-48s" NEON_CYAN "│\n", sys_info.release);
+    printf("│ " NEON_PINK "Packages  " RESET_COLOR "%d (pacman)%39s" NEON_CYAN "│\n", 
+           pacman_count, "");
+    printf("│ " NEON_PURPLE "DE        " RESET_COLOR "%-48s" NEON_CYAN "│\n", desktop_env);
+
+    // Hardware information
+    printf("├──────────────────────────────────────────────────────────────┤\n");
+    printf("│ " NEON_ORANGE "CPU       " RESET_COLOR "%-48s" NEON_CYAN "│\n", cpu_model);
+    printf("│ " NEON_GREEN "GPU       " RESET_COLOR "%-48s" NEON_CYAN "│\n", gpu_info);
+
+    // Memory usage with progress bar
+    int mem_percent = ((total_mem - available_mem) * 100) / total_mem;
+    printf("│ " NEON_BLUE "Memory    " RESET_COLOR "[");
+    for (int i = 0; i < 20; i++) {
+        if (i < mem_percent / 5)
+            printf(NEON_GREEN "█");
+        else
+            printf(DIM_TEXT "░" RESET_COLOR);
+    }
+    printf("] %.1f/%.1fG%*s" NEON_CYAN "│\n",
+           (total_mem - available_mem) / 1048576.0,
+           total_mem / 1048576.0,
+           (int)(13 - (mem_percent >= 100 ? 3 : mem_percent >= 10 ? 2 : 1)), "");
+
+    // Uptime
+    printf("│ " NEON_PINK "Uptime    " RESET_COLOR "%d days, %d hours, %d mins%*s" NEON_CYAN "│\n",
+           days, hours, minutes,
+           (int)(27 - (days >= 100 ? 3 : days >= 10 ? 2 : 1) -
+                 (hours >= 10 ? 2 : 1) - (minutes >= 10 ? 2 : 1)), "");
+
+    // Color blocks
+    printf("├──────────────────────────────────────────────────────────────┤\n");
+    printf("│ ");
+    for (int i = 0; i < 8; i++) printf(NEON_CYAN "█" NEON_BLUE "█" NEON_GREEN "█ ");
+    printf(NEON_CYAN "│\n│ ");
+    for (int i = 0; i < 8; i++) printf(NEON_PINK "█" NEON_PURPLE "█" NEON_YELLOW "█ ");
+    printf(NEON_CYAN "│\n");
+
+    printf("╰──────────────────────────────────────────────────────────────╯\n");
+    printf(RESET_COLOR);
+
+    return 1;
+}
 
 // Function to check for aliases
 char* check_alias(char *cmd) {
@@ -287,9 +708,9 @@ char* get_prompt() {
 
     char *prompt = malloc(256);
     if (geteuid() == 0) {
-        snprintf(prompt, 256, "razzshell-# [%s]> ", dir_name);
+        snprintf(prompt, 256, CYBER_STYLE TOP_BORDER "\n" SIDE_BORDER " razzshell-# [%s]> " RESET_COLOR, dir_name);
     } else {
-        snprintf(prompt, 256, "razzshell-$ [%s]> ", dir_name);
+        snprintf(prompt, 256, CYBER_STYLE TOP_BORDER "\n" SIDE_BORDER " razzshell-$ [%s]> " RESET_COLOR, dir_name);
     }
     return prompt;
 }
@@ -325,6 +746,7 @@ void initialize_readline() {
     rl_readline_name = "razzshell";
     rl_attempted_completion_function = razzshell_completion;
 }
+
 // Command generator for completion
 char *get_command_name(int index) {
     int built_in_count = sizeof(command_list) / sizeof(CommandMap);
@@ -359,6 +781,7 @@ char *command_generator(const char *text, int state) {
     }
     return NULL;
 }
+
 char *read_input_line() {
     char *line = readline(get_prompt());
     if (line && *line) {
@@ -387,6 +810,7 @@ char *history_generator(const char *text, int state) {
     }
     return NULL;
 }
+
 // Completion function
 char **razzshell_completion(const char *text, int start, int end) {
     char **matches = NULL;
@@ -401,6 +825,9 @@ char **razzshell_completion(const char *text, int start, int end) {
     }
     return matches;
 }
+
+// Function prototype for highlighting commands
+void highlight_command(const char *cmd, const char *highlight);
 
 // Command implementations
 int razz_change(char **args) {
@@ -499,58 +926,6 @@ int razz_terminate(char **args) {
             printf("Process %d terminated.\n", pid);
         }
     }
-    return 1;
-}
-
-// Custom 'list' command with colorful output
-int razz_list(char **args) {
-    DIR *dir;
-    struct dirent *entry;
-    struct stat file_stat;
-    char path[1024];
-    char *dirname;
-    int show_all = 0; // Flag to show hidden files
-
-    // Check for '-a' option
-    if (args[1] != NULL && strcmp(args[1], "-a") == 0) {
-        show_all = 1;
-        dirname = (args[2] != NULL) ? args[2] : ".";
-    } else {
-        dirname = (args[1] != NULL) ? args[1] : ".";
-    }
-
-    dir = opendir(dirname);
-    if (dir == NULL) {
-        perror("list");
-        return 1;
-    }
-
-    while ((entry = readdir(dir)) != NULL) {
-        // Skip hidden files if '-a' is not specified
-        if (!show_all && entry->d_name[0] == '.') {
-            continue;
-        }
-
-        snprintf(path, sizeof(path), "%s/%s", dirname, entry->d_name);
-        if (lstat(path, &file_stat) == -1) {
-            perror("lstat");
-            continue;
-        }
-
-        if (S_ISDIR(file_stat.st_mode)) {
-            printf(BLUE_COLOR "%s  " RESET_COLOR, entry->d_name);
-        } else if (S_ISLNK(file_stat.st_mode)) {
-            printf(CYAN_COLOR "%s  " RESET_COLOR, entry->d_name);
-        } else if (file_stat.st_mode & S_IXUSR) {
-            printf(GREEN_COLOR "%s  " RESET_COLOR, entry->d_name);
-        } else if ((file_stat.st_mode & S_ISUID) || (file_stat.st_mode & S_ISGID)) {
-            printf(RED_COLOR "%s  " RESET_COLOR, entry->d_name);
-        } else {
-            printf("%s  ", entry->d_name);
-        }
-    }
-    printf("\n");
-    closedir(dir);
     return 1;
 }
 
@@ -762,7 +1137,7 @@ int razz_setowner(char **args) {
 int razz_showprocesses(char **args) {
     pid_t pid = fork();
     if (pid == 0) {
-        execvp("ps", args);
+        execlp("ps", "ps", "-ef", NULL);
         perror("showprocesses");
         exit(EXIT_FAILURE);
     } else if (pid > 0) {
@@ -1102,7 +1477,16 @@ int razz_printenv(char **args) {
 }
 
 int razz_clear(char **args) {
-    printf("\033[H\033[J");
+    // Clear screen and move cursor to home position
+    printf("\033[2J\033[H");
+    
+    // Clear scrollback buffer (if terminal supports it)
+    printf("\033[3J");
+    
+    // Force a complete refresh
+    printf("\033[!p");
+    fflush(stdout);
+    
     return 1;
 }
 
@@ -1246,22 +1630,55 @@ int razz_repeat(char **args) {
 
         // Execute command
         int found = 0;
-        for (int k = 0; k < sizeof(command_list) / sizeof(CommandMap); k++) {
-            if (strcmp(cmd_args[0], command_list[k].command_name) == 0) {
-                command_list[k].command_func(cmd_args);
-                found = 1;
-                break;
+
+        // Special handling for 'sudo su'
+        if (strcmp(cmd_args[0], "sudo") == 0 && cmd_args[1] != NULL && strcmp(cmd_args[1], "su") == 0) {
+            int status = razz_sudo_su(cmd_args);
+            found = 1;
+        } else {
+            for (int k = 0; k < sizeof(command_list) / sizeof(CommandMap); k++) {
+                if (strcmp(cmd_args[0], command_list[k].command_name) == 0) {
+                    command_list[k].command_func(cmd_args);
+                    found = 1;
+                    break;
+                }
+            }
+        }
+
+        if (!found) {
+            // Check for plugin commands
+            for (int i = 0; i < plugin_count; i++) {
+                if (strcmp(cmd_args[0], plugins[i].name) == 0) {
+                    plugins[i].command_func(cmd_args);
+                    found = 1;
+                    break;
+                }
             }
         }
         if (!found) {
             // Execute external command
             pid_t pid = fork();
             if (pid == 0) {
+                // Put the child in its own process group
+                setpgid(0, 0);
+
+                // Take control of the terminal
+                tcsetpgrp(STDIN_FILENO, getpid());
+
+                // Restore default signal handlers
+                signal(SIGINT, SIG_DFL);
+                signal(SIGTSTP, SIG_DFL);
+
                 execvp(cmd_args[0], cmd_args);
                 printf(RED_COLOR "%s: command not found\n" RESET_COLOR, cmd_args[0]);
                 exit(EXIT_FAILURE);
             } else if (pid > 0) {
-                waitpid(pid, NULL, 0);
+                // Wait for the child process
+                int child_status;
+                waitpid(pid, &child_status, WUNTRACED);
+
+                // Give control back to the shell
+                tcsetpgrp(STDIN_FILENO, shell_pgid);
             } else {
                 perror("fork");
             }
@@ -1277,27 +1694,275 @@ int razz_history_clear(char **args) {
     return 1;
 }
 
+// New feature: System resource monitor
+int razz_monitor(char **args) {
+    int interval = 2; // Default update interval in seconds
+    if (args[1]) {
+        interval = atoi(args[1]);
+        if (interval < 1) interval = 1;
+    }
+
+    printf(NEON_CYAN "╭───────────────────── " NEON_PINK "Process Monitor" NEON_CYAN " ─────────────────────╮\n" RESET_COLOR);
+    
+    while (1) {
+        // Clear previous output
+        printf("\033[H\033[J");
+        
+        // Get CPU usage
+        double cpu_usage = 0.0;
+        FILE *stat = fopen("/proc/stat", "r");
+        if (stat) {
+            unsigned long long user, nice, system, idle, iowait, irq, softirq;
+            fscanf(stat, "cpu %llu %llu %llu %llu %llu %llu %llu",
+                   &user, &nice, &system, &idle, &iowait, &irq, &softirq);
+            fclose(stat);
+            
+            static unsigned long long prev_total = 0, prev_idle = 0;
+            unsigned long long total = user + nice + system + idle + iowait + irq + softirq;
+            unsigned long long diff_total = total - prev_total;
+            unsigned long long diff_idle = idle - prev_idle;
+            
+            if (diff_total > 0)
+                cpu_usage = 100.0 * (1.0 - (double)diff_idle / diff_total);
+            
+            prev_total = total;
+            prev_idle = idle;
+        }
+
+        // Get memory usage
+        unsigned long total_mem = 0, available_mem = 0;
+        FILE *meminfo = fopen("/proc/meminfo", "r");
+        if (meminfo) {
+            char line[256];
+            while (fgets(line, sizeof(line), meminfo)) {
+                if (strncmp(line, "MemTotal:", 9) == 0)
+                    sscanf(line, "MemTotal: %lu", &total_mem);
+                else if (strncmp(line, "MemAvailable:", 12) == 0)
+                    sscanf(line, "MemAvailable: %lu", &available_mem);
+            }
+            fclose(meminfo);
+        }
+        
+        // Print header
+        time_t now = time(NULL);
+        char timestr[64];
+        strftime(timestr, sizeof(timestr), "%H:%M:%S", localtime(&now));
+        
+        printf(NEON_CYAN "│ " NEON_YELLOW "System Monitor" NEON_CYAN " - Updated at: " 
+               NEON_GREEN "%s" NEON_CYAN " │\n", timestr);
+        printf("├────────────────────────────────────────────────────────┤\n" RESET_COLOR);
+
+        // CPU Usage Bar
+        printf(NEON_CYAN "│ " NEON_BLUE "CPU Usage  " RESET_COLOR "[");
+        int cpu_bars = (int)(cpu_usage / 2.5);
+        for (int i = 0; i < 40; i++) {
+            if (i < cpu_bars)
+                printf(NEON_GREEN "█");
+            else
+                printf(DIM_TEXT "░" RESET_COLOR);
+        }
+        printf("] %5.1f%%" NEON_CYAN " │\n", cpu_usage);
+
+        // Memory Usage Bar
+        double mem_used = (total_mem - available_mem) / 1024.0;
+        double mem_total = total_mem / 1024.0;
+        double mem_percent = (mem_used / mem_total) * 100;
+        
+        printf(NEON_CYAN "│ " NEON_PINK "Memory    " RESET_COLOR "[");
+        int mem_bars = (int)(mem_percent / 2.5);
+        for (int i = 0; i < 40; i++) {
+            if (i < mem_bars)
+                printf(NEON_ORANGE "█");
+            else
+                printf(DIM_TEXT "░" RESET_COLOR);
+        }
+        printf("] %5.1f%%" NEON_CYAN " │\n", mem_percent);
+        printf("│ " RESET_COLOR "          %.1f/%.1f GB Used" NEON_CYAN "%27s│\n", 
+               mem_used/1024.0, mem_total/1024.0, "");
+
+        // Top processes
+        printf("├────────────────────────────────────────────────────────┤\n");
+        printf("│ " NEON_GREEN "Top Processes by CPU Usage" NEON_CYAN "%29s│\n", "");
+        printf("├────────────────────────────────────────────────────────┤\n");
+        printf("│ " NEON_BLUE "PID   CPU%%   MEM%%   COMMAND" NEON_CYAN "%35s│\n", "");
+
+        // Get top processes using ps command
+        FILE *ps = popen("ps -eo pid,pcpu,pmem,comm --sort=-pcpu | head -n 6", "r");
+        if (ps) {
+            char line[256];
+            int count = 0;
+            // Skip header
+            fgets(line, sizeof(line), ps);
+            while (fgets(line, sizeof(line), ps) && count < 5) {
+                int pid;
+                float cpu, mem;
+                char cmd[32];
+                sscanf(line, "%d %f %f %s", &pid, &cpu, &mem, cmd);
+                printf(NEON_CYAN "│ " RESET_COLOR "%5d %5.1f %6.1f   %-30s" NEON_CYAN "│\n",
+                       pid, cpu, mem, cmd);
+                count++;
+            }
+            pclose(ps);
+        }
+
+        printf("╰────────────────────────────────────────────────────────╯\n" RESET_COLOR);
+        
+        fflush(stdout);
+        sleep(interval);
+
+        // Check for input to exit
+        struct timeval tv = {0, 0};
+        fd_set fds;
+        FD_ZERO(&fds);
+        FD_SET(STDIN_FILENO, &fds);
+        if (select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv) > 0) {
+            char c;
+            read(STDIN_FILENO, &c, 1);
+            if (c == 'q' || c == 'Q')
+                break;
+        }
+    }
+
+    // Clear screen when exiting
+    printf("\033[2J\033[H");
+    return 1;
+}
+
+// Enhanced history search with syntax highlighting
+int razz_history_search(char **args) {
+    HIST_ENTRY **history = history_list();
+    if (!history) {
+        printf(ERROR_STYLE "No command history available\n" RESET_COLOR);
+        return 1;
+    }
+
+    char *query = args[1];
+    int found = 0;
+
+    printf(NEON_CYAN "╭─────────────────── " NEON_PINK "Command History Search" 
+           NEON_CYAN " ───────────────────╮\n");
+
+    if (query) {
+        // Search mode
+        printf("│ " NEON_YELLOW "Searching for: " RESET_COLOR "%-43s" NEON_CYAN "│\n", query);
+        printf("├────────────────────────────────────────────────────────┤\n");
+        
+        for (int i = 0; history[i]; i++) {
+            if (strcasestr(history[i]->line, query)) {
+                highlight_command(history[i]->line, query);
+                found++;
+            }
+        }
+        
+        if (!found) {
+            printf("%s│ %sNo matches found for: %s%s%*s│\n", 
+                   NEON_CYAN, NEON_RED, query, NEON_CYAN,
+                   (int)(35 - strlen(query)), "");
+        }
+    } else {
+        // Show recent history with line numbers
+        printf("│ " NEON_YELLOW "Recent Commands" NEON_CYAN "%41s│\n", "");
+        printf("├────────────────────────────────────────────────────────┤\n");
+        
+        int start = history_length - 10;
+        if (start < 0) start = 0;
+        
+        for (int i = start; history[i]; i++) {
+            printf("│ " NEON_GREEN "%3d" RESET_COLOR " │ ", i + 1);
+            highlight_command(history[i]->line, NULL);
+            found++;
+        }
+    }
+
+    printf("╰────────────────────────────────────────────────────────╯\n");
+    printf(RESET_COLOR "Type '!<number>' to execute a command or 'q' to quit\n");
+    
+    return 1;
+}
+
+// Syntax highlighting for commands
+void highlight_command(const char *cmd, const char *highlight) {
+    char *cmd_copy = strdup(cmd);
+    char *token = strtok(cmd_copy, " ");
+    int first = 1;
+    int pos = 0;
+
+    while (token) {
+        // Add spacing
+        if (!first) {
+            printf(" ");
+            pos++;
+        }
+
+        // Highlight matching text if searching
+        if (highlight && strcasestr(token, highlight)) {
+            printf(NEON_PINK "%s" RESET_COLOR, token);
+        }
+        // Highlight command name
+        else if (first) {
+            printf(NEON_BLUE "%s" RESET_COLOR, token);
+        }
+        // Highlight options
+        else if (token[0] == '-') {
+            printf(NEON_GREEN "%s" RESET_COLOR, token);
+        }
+        // Highlight paths
+        else if (strchr(token, '/')) {
+            printf(NEON_YELLOW "%s" RESET_COLOR, token);
+        }
+        // Regular text
+        else {
+            printf("%s", token);
+        }
+
+        pos += strlen(token);
+        first = 0;
+        token = strtok(NULL, " ");
+    }
+
+    // Pad to full width
+    int padding = 48 - pos;
+    if (padding > 0) {
+        printf("%*s", padding, "");
+    }
+    printf(NEON_CYAN "│\n");
+
+    free(cmd_copy);
+}
+
 // Initialize shell
 void init_shell() {
+    // Set up shell environment
+    setup_shell_env();
+    
     // Ignore interactive and job-control signals
     signal(SIGINT, sigint_handler);
     signal(SIGTSTP, sigtstp_handler);
-    signal(SIGQUIT, SIG_IGN);
-    signal(SIGTTIN, SIG_IGN);
     signal(SIGTTOU, SIG_IGN);
-
-    // Put shell in its own process group
+    
+    // Initialize job control
     shell_pgid = getpid();
     if (setpgid(shell_pgid, shell_pgid) < 0) {
         perror("Couldn't put the shell in its own process group");
         exit(1);
     }
-
-    // Grab control of the terminal
+    
+    // Take control of the terminal
     tcsetpgrp(STDIN_FILENO, shell_pgid);
-
-    // Save default terminal attributes for shell
     tcgetattr(STDIN_FILENO, &shell_tmodes);
+    
+    // Initialize readline
+    initialize_readline();
+    
+    // Clear screen and show welcome message
+    printf("\033[2J\033[H"); // Clear screen and move cursor to top
+    printf(NEON_CYAN
+           "╔════════════════════════════════════════════════════════════════╗\n"
+           "║                    Welcome to RazzShell v1.0.2                 ║\n"
+           "║                                                                ║\n"
+           "║  Type 'howto' for help or 'razzfetch' for system information  ║\n"
+           "╚════════════════════════════════════════════════════════════════╝\n"
+           RESET_COLOR "\n");
 }
 
 // Main shell loop
@@ -1386,8 +2051,8 @@ void razzshell_loop() {
                     printf(RED_COLOR "%s: command not found\n" RESET_COLOR, args[0]);
                     exit(EXIT_FAILURE);
                 } else if (pid > 0) {
-                    int child_status;
                     // Wait for the child process
+                    int child_status;
                     waitpid(pid, &child_status, WUNTRACED);
 
                     // Give control back to the shell
@@ -1412,4 +2077,79 @@ int main(int argc, char **argv) {
 
     razzshell_loop();
     return EXIT_SUCCESS;
+}
+
+// Matrix-style text effect
+int razz_matrix(char **args) {
+    printf(CYBER_STYLE "\n%s\n" SIDE_BORDER " Matrix Effect\n%s\n" RESET_COLOR, TOP_BORDER, BOTTOM_BORDER);
+    
+    char chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$%^&*";
+    int width = 80;
+    int height = 20;
+    
+    // Clear screen
+    printf("\033[2J\033[H");
+    
+    for (int frame = 0; frame < 100; frame++) {
+        printf("\033[H"); // Move cursor to top
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                if (rand() % 20 == 0) {
+                    printf(GREEN_COLOR "%c" RESET_COLOR, chars[rand() % strlen(chars)]);
+                } else {
+                    printf(" ");
+                }
+            }
+            printf("\n");
+        }
+        usleep(50000); // Sleep for 50ms
+    }
+    
+    return 1;
+}
+
+// System information with ASCII art
+int razz_sysart(char **args) {
+    struct utsname sys_info;
+    if (uname(&sys_info) == -1) {
+        printf(ERROR_STYLE "Error getting system information\n" RESET_COLOR);
+        return 1;
+    }
+
+    printf(CYBER_STYLE
+           "\n    ╭─────────────────────╮    "
+           "\n    │  SYSTEM INFO       │    "
+           "\n    ├─────────────────────┤    "
+           "\n    │  OS: %-13s │    "
+           "\n    │  HOST: %-11s │    "
+           "\n    │  KERNEL: %-9s │    "
+           "\n    │  ARCH: %-11s │    "
+           "\n    ╰─────────────────────╯    "
+           "\n" RESET_COLOR,
+           sys_info.sysname,
+           sys_info.nodename,
+           sys_info.release,
+           sys_info.machine);
+    
+    return 1;
+}
+
+// Clock with ASCII art
+int razz_clock(char **args) {
+    time_t now;
+    struct tm *time_info;
+    char time_str[9];
+    
+    time(&now);
+    time_info = localtime(&now);
+    strftime(time_str, sizeof(time_str), "%H:%M:%S", time_info);
+    
+    printf(CYBER_STYLE
+           "\n    ╭───────────────╮    "
+           "\n    │   %s   │    "
+           "\n    ╰───────────────╯    "
+           "\n" RESET_COLOR,
+           time_str);
+    
+    return 1;
 }
