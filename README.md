@@ -1,4 +1,4 @@
-# RazzShell (1.0.1)
+# RazzShell (1.0.2)
 ![Alt text](images/razzshell-logo.png)
 
 RazzShell is a custom Unix shell written in C, designed to provide a unique and user-friendly command-line interface. It offers a variety of built-in commands, colorful output, command aliases, environment variable support, and the ability to execute external programs seamlessly. RazzShell aims to combine the functionality of traditional shells with custom features to enhance the user experience.
@@ -48,11 +48,19 @@ RazzShell is a custom Unix shell written in C, designed to provide a unique and 
 - **Bookmarking**: Bookmark frequently used commands for quick access.
 - **Session Saving and Loading**: Save your session history and load it later.
 - **Command Flow Visualization**: Visualize the flow of command execution.
--  **Plugin Support**: RazzShell allows users to load custom plugins dynamically, extending the shell's functionality and enabling the integration of third-party tools and scripts.
-- **Signal Handling**: The shell supports signal handling for `SIGINT`, `SIGTSTP`, `SIGQUIT`, `SIGTTIN`, and `SIGTTOU`, providing a more robust and user-friendly experience.
-- **Job Management**: RazzShell supports job management, allowing users to manage background jobs and bring them to the foreground as needed.
-- **Command History**: The shell maintains a command history, which can be accessed and navigated using the Readline library.
-- **Autocompletion**: RazzShell includes an autocomplete feature that suggests possible completions for commands, making it easier to find and execute commands without needing to remember their exact names.
+- **Enhanced Plugin System**: RazzShell features an improved plugin system with dynamic loading/unloading capabilities and better integration with the shell's core functionality.
+- **System Resource Monitor**: Real-time monitoring of system resources with an interactive interface.
+- **Enhanced History Search**: Advanced command history search with syntax highlighting for better readability.
+- **Visual Effects**: 
+  - Matrix-style text effect for a cyberpunk aesthetic
+  - System information display with ASCII art
+  - Digital clock with ASCII art display
+- **RazzFetch**: Custom system information display tool inspired by neofetch
+- **Cyber Theme**: Enhanced visual styling with neon colors and cyber-inspired design elements
+- **Signal Handling**: Robust signal handling for `SIGINT`, `SIGTSTP`, `SIGQUIT`, `SIGTTIN`, and `SIGTTOU`
+- **Job Management**: Comprehensive background job management system
+- **Command History**: Advanced command history with Readline library integration
+- **Autocompletion**: Intelligent command autocompletion system
 
 ---
 
@@ -66,6 +74,8 @@ RazzShell distinguishes itself from other Unix shells like Bash, Zsh, and Fish b
 - **Simplified Command Set**: By providing a curated set of built-in commands, RazzShell aims to simplify command usage, making it more approachable for new users.
 - **Consistent Behavior**: Custom commands are designed to behave consistently across different systems, reducing discrepancies that might occur with external commands in other shells.
 - **Root Shell Integration**: RazzShell allows users to elevate to a root shell within the shell itself, maintaining the shell environment and features.
+- **Enhanced Visuals**: Version 1.0.2 introduces a cyber-themed interface with neon colors and ASCII art displays, setting it apart from traditional shell experiences.
+- **System Monitoring**: Built-in system resource monitoring capabilities provide real-time insights into system performance.
 
 ---
 
@@ -115,7 +125,7 @@ sudo pacman -S base-devel readline
 3. **Compile the Source Code:**
 
    ```bash
-   gcc -o razzshell razzshell.c -lreadline -ldl
+   gcc -o razzshell razzshell.c -lreadline -ldl -lncurses
    ```
 
 4. **Install RazzShell:**
@@ -179,7 +189,7 @@ yay -S razzshell
 3. **Compile the Source Code:**
 
    ```bash
-   gcc -o razzshell razzshell.c -lreadline -ldl
+   gcc -o razzshell razzshell.c -lreadline -ldl -lncurses
    ```
 
 4. **Install RazzShell:**
