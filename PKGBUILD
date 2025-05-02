@@ -8,7 +8,7 @@ url="https://github.com/rajacharya987/razzshell"
 license=('MIT')
 depends=('readline')
 source=("https://github.com/rajacharya987/razzshell/releases/download/v1.0.2/razzshell-1.0.2.tar.gz")
-sha256sums=('654bdfaa758be6a3e0c844ea9516e9a47b4edbcd5a2b2e9232c6616489892e40')
+sha256sums=('56d44a7f42da6fcdd15b42fc18aa361c3a4cf93768a6ebb3b7317a317048e608')
 
 # Correct build function to handle extraction and directory change
 build() {
