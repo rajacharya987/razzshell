@@ -22,10 +22,6 @@
 #include <sys/time.h>
 #include <strings.h>
 
-// RazzShell modernization includes
-#include "src/shell_config.h"
-#include "src/posix_compat.h"
-
 #define MAX_ARGS 128
 #define MAX_JOBS 100
 #define MAX_HISTORY 1000
@@ -119,8 +115,7 @@ int alias_count = 0;
 // Shell environment setup
 void setup_shell_env() {
     setenv("SHELL", "/usr/local/bin/razzshell", 1);
-    setenv("RAZZSHELL_VERSION", "2.0.0", 1);
-    setenv("RAZZSHELL_MODE", shell_mode_name(shell_get_mode()), 1);
+    setenv("RAZZSHELL_VERSION", "1.0.2", 1);
 }
 
 // Forward declarations
@@ -198,8 +193,6 @@ int razz_sysart(char **args);       // System information with ASCII art
 int razz_clock(char **args);        // Digital clock
 int razz_fetch(char **args);        // RazzFetch (custom neofetch-style system info)
 int razz_history_search(char **args); // Enhanced history search
-int razz_mode(char **args);         // Switch shell mode
-int razz_set(char **args);          // Set shell options (set -e, etc.)
 
 // Command-to-function mapping
 typedef struct {
@@ -271,8 +264,6 @@ CommandMap command_list[] = {
     {"clock", razz_clock, "Show digital clock"},
     {"razzfetch", razz_fetch, "Display system information in RazzShell style"},
     {"hsearch", razz_history_search, "Search command history with highlighting"},
-    {"mode", razz_mode, "Switch shell execution mode"},
-    {"set", razz_set, "Set shell options (set -e, set -o pipefail, etc.)"},
     // Add additional commands here as per your list
 };
 
@@ -1939,71 +1930,6 @@ void highlight_command(const char *cmd, const char *highlight) {
     free(cmd_copy);
 }
 
-// Command: mode (switch shell mode)
-int razz_mode(char **args) {
-    if (args[1] == NULL) {
-        printf("Current mode: %s\n", shell_mode_name(shell_get_mode()));
-        printf("\nAvailable modes:\n");
-        printf("  razzshell  - Native RazzShell mode (custom commands)\n");
-        printf("  posix      - POSIX-compliant mode (standard commands)\n");
-        printf("  bash       - Bash-compatible mode\n");
-        printf("\nUsage: mode [razzshell|posix|bash]\n");
-        return 1;
-    }
-    
-    if (strcmp(args[1], "razzshell") == 0) {
-        shell_set_mode(MODE_RAZZSHELL);
-    } else if (strcmp(args[1], "posix") == 0) {
-        shell_set_mode(MODE_POSIX);
-    } else if (strcmp(args[1], "bash") == 0) {
-        shell_set_mode(MODE_BASH);
-    } else {
-        printf(ERROR_STYLE "Unknown mode: %s\n" RESET_COLOR, args[1]);
-        printf("Valid modes: razzshell, posix, bash\n");
-        return 1;
-    }
-    
-    return 1;
-}
-
-// Command: set (set shell options)
-int razz_set(char **args) {
-    if (args[1] == NULL) {
-        printf("Shell options:\n");
-        printf("  errexit:   %s\n", shell_config.errexit ? "on" : "off");
-        printf("  pipefail:  %s\n", shell_config.pipefail ? "on" : "off");
-        printf("  nounset:   %s\n", shell_config.nounset ? "on" : "off");
-        printf("  verbose:   %s\n", shell_config.verbose ? "on" : "off");
-        printf("  xtrace:    %s\n", shell_config.xtrace ? "on" : "off");
-        printf("\nUsage: set [-e] [-u] [-v] [-x] [-o pipefail]\n");
-        return 1;
-    }
-    
-    // Handle set -o pipefail
-    if (strcmp(args[1], "-o") == 0 && args[2] != NULL) {
-        if (strcmp(args[2], "pipefail") == 0) {
-            shell_config.pipefail = 1;
-            printf("pipefail enabled\n");
-        } else {
-            printf(ERROR_STYLE "Unknown option: %s\n" RESET_COLOR, args[2]);
-        }
-        return 1;
-    }
-    
-    // Handle set +o pipefail
-    if (strcmp(args[1], "+o") == 0 && args[2] != NULL) {
-        if (strcmp(args[2], "pipefail") == 0) {
-            shell_config.pipefail = 0;
-            printf("pipefail disabled\n");
-        }
-        return 1;
-    }
-    
-    // Handle other options
-    shell_apply_set_options(args[1]);
-    return 1;
-}
-
 // Initialize shell
 void init_shell() {
     // Set up shell environment
@@ -2032,12 +1958,11 @@ void init_shell() {
     printf("\033[2J\033[H"); // Clear screen and move cursor to top
     printf(NEON_CYAN
            "╔════════════════════════════════════════════════════════════════╗\n"
-           "║                    Welcome to RazzShell v2.0.0                 ║\n"
-           "║                    Mode: %-37s ║\n"
+           "║                    Welcome to RazzShell v1.0.2                 ║\n"
            "║                                                                ║\n"
            "║  Type 'howto' for help or 'razzfetch' for system information  ║\n"
            "╚════════════════════════════════════════════════════════════════╝\n"
-           RESET_COLOR "\n", shell_mode_name(shell_get_mode()));
+           RESET_COLOR "\n");
 }
 
 // Main shell loop
@@ -2074,10 +1999,8 @@ void razzshell_loop() {
         char *token = strtok(input, " \t\r\n");
 
         while (token != NULL && position < MAX_ARGS - 1) {
-            // First check for POSIX translation (if in POSIX/Bash mode)
-            const char *translated = posix_translate_command(token);
-            // Then check for user-defined aliases
-            char *alias_cmd = check_alias((char*)translated);
+            // Check for aliases
+            char *alias_cmd = check_alias(token);
             args[position++] = alias_cmd;
             token = strtok(NULL, " \t\r\n");
         }
@@ -2146,33 +2069,6 @@ void razzshell_loop() {
 }
 
 int main(int argc, char **argv) {
-    // Initialize shell configuration
-    shell_config_init();
-    posix_init_aliases();
-    
-    // Parse command-line arguments for mode selection
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--posix") == 0) {
-            shell_set_mode(MODE_POSIX);
-        } else if (strcmp(argv[i], "-b") == 0 || strcmp(argv[i], "--bash") == 0) {
-            shell_set_mode(MODE_BASH);
-        } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
-            printf("RazzShell v2.0.0 - Modern Unix Shell\n\n");
-            printf("Usage: razzshell [OPTIONS]\n\n");
-            printf("Options:\n");
-            printf("  --posix          Run in POSIX-compliant mode\n");
-            printf("  -b, --bash       Run in Bash-compatible mode\n");
-            printf("  -h, --help       Show this help message\n");
-            printf("  --version        Show version information\n\n");
-            printf("Default mode: RazzShell native mode\n");
-            return EXIT_SUCCESS;
-        } else if (strcmp(argv[i], "--version") == 0) {
-            printf("RazzShell version 2.0.0\n");
-            printf("Mode: %s\n", shell_mode_name(shell_get_mode()));
-            return EXIT_SUCCESS;
-        }
-    }
-    
     // Initialize shell
     init_shell();
     initialize_readline();
