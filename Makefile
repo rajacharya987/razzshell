@@ -4,11 +4,15 @@ CFLAGS = -Wall -Wextra -g -I.
 LDFLAGS = -lreadline -ldl -lncurses
 
 # Source files
-SRCS = razzshell.c src/shell_config.c src/posix_compat.c
+SRCS = razzshell.c src/shell_config.c src/posix_compat.c src/lexer.c src/ast.c src/parser.c
 OBJS = $(SRCS:.c=.o)
 
 # Target executable
 TARGET = razzshell
+
+# Test programs
+TEST_LEXER = test_lexer
+TEST_PARSER = test_parser
 
 # Default target
 all: $(TARGET)
@@ -24,7 +28,7 @@ $(TARGET): $(OBJS)
 
 # Clean build artifacts
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -f $(OBJS) $(TARGET) $(TEST_LEXER) $(TEST_PARSER)
 	@echo "Clean complete"
 
 # Install to system
@@ -50,6 +54,16 @@ run-posix: $(TARGET)
 run-bash: $(TARGET)
 	./$(TARGET) --bash
 
+# Build and run lexer test
+test-lexer: src/test_lexer.c src/lexer.o
+	$(CC) $(CFLAGS) src/test_lexer.c src/lexer.o -o $(TEST_LEXER)
+	./$(TEST_LEXER)
+
+# Build and run parser test
+test-parser: src/test_parser.c src/lexer.o src/ast.o src/parser.o
+	$(CC) $(CFLAGS) src/test_parser.c src/lexer.o src/ast.o src/parser.o -o $(TEST_PARSER)
+	./$(TEST_PARSER)
+
 # Show help
 help:
 	@echo "RazzShell Build System"
@@ -62,6 +76,8 @@ help:
 	@echo "  run        - Build and run in native mode"
 	@echo "  run-posix  - Build and run in POSIX mode"
 	@echo "  run-bash   - Build and run in Bash mode"
+	@echo "  test-lexer - Build and run lexer tests"
+	@echo "  test-parser - Build and run parser tests"
 	@echo "  help       - Show this help message"
 
-.PHONY: all clean install uninstall run run-posix run-bash help
+.PHONY: all clean install uninstall run run-posix run-bash test-lexer test-parser help
