@@ -1,0 +1,99 @@
+RazzShell Documentation
+Version 1.0.2
+
+Overview
+RazzShell is a custom Unix shell written in C. It provides built-in commands, command aliases,
+environment variable support, job control, and the ability to run external programs.
+
+Features
+- Custom prompt that shows the current directory and user type.
+- Colorized output for directory listings and error messages.
+- Custom built-in command names to avoid conflicts with external commands.
+- External command execution with standard PATH resolution.
+- Command aliases and environment variable management.
+- Command history with interactive navigation.
+- Background and foreground job control.
+- Session save and load utilities.
+- Visual command flow display and system info helpers.
+
+Installation
+Prerequisites
+- GCC compiler
+- Readline library
+
+Ubuntu/Debian
+1) sudo apt-get update
+2) sudo apt-get install build-essential libreadline-dev -ldl
+
+Fedora
+1) sudo dnf install gcc make readline-devel
+
+Arch Linux
+1) sudo pacman -S base-devel readline
+
+Build from source
+1) git clone https://github.com/rajacharya987/razzshell.git
+2) cd razzshell
+3) gcc -o razzshell razzshell.c -lreadline -ldl -lncurses
+4) sudo cp razzshell /usr/local/bin/
+5) sudo chmod +x /usr/local/bin/razzshell
+
+Usage
+Start the shell with:
+  razzshell
+
+Prompt format
+- Regular user: razzshell-$ [directory]>
+- Root user:    razzshell-# [directory]>
+
+Built-in commands (selected)
+File and directory operations
+- change [directory]        Change the current working directory
+- list [-a] [directory]     List directory contents with colorized output
+- copy [source] [dest]      Copy files
+- move [source] [dest]      Move or rename files
+- delete [file]             Delete files
+- makedir [directory]       Create a directory
+- removedir [directory]     Remove an empty directory
+- create [filename]         Create a new file
+- readfile [filename]       Display file contents
+- headfile [filename]       Display first lines of a file
+- tailfile [filename]       Display last lines of a file
+- wordcount [filename]      Count words, lines, and characters
+
+Process management
+- showprocesses             Display running processes
+- terminate [pid]           Terminate a process
+
+System information
+- sysinfo                   Display system information
+- diskusage                 Display disk usage
+- cpuusage                  Display CPU usage
+- memusage                  Display memory usage
+- diskfree                  Display free disk space
+- diskuse                   Estimate file space usage
+- systemname                Print system information
+
+Aliases and environment variables
+- makealias                 Create a command alias
+- removealias               Remove a command alias
+- aliases                   List all aliases
+- setenv                    Set an environment variable
+- printenv                  Print environment variables
+- unsetenv                  Unset an environment variable
+
+Session management and utilities
+- save                      Save current session
+- load                      Load saved session
+- bookmark                  Bookmark a command
+- listbookmarks             List all bookmarks
+- history_clear             Clear command history
+- repeat                    Repeat a command multiple times
+- visualize                 Visualize command flow
+
+Notes
+- External commands are executed when no built-in command matches.
+- Use sudo su within RazzShell to switch to a root shell.
+
+License
+See the LICENSE file for details.
