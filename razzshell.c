@@ -116,6 +116,18 @@ int bookmark_count = 0;
 Alias aliases[MAX_ALIASES];
 int alias_count = 0;
 
+static char *safe_strdup(const char *value) {
+    if (!value) {
+        return NULL;
+    }
+
+    char *copy = strdup(value);
+    if (!copy) {
+        fprintf(stderr, ERROR_STYLE "Memory allocation failed\n" RESET_COLOR);
+    }
+    return copy;
+}
+
 // Shell environment setup
 void setup_shell_env() {
     setenv("SHELL", "/usr/local/bin/razzshell", 1);
@@ -671,7 +683,11 @@ int razz_loadplugin(char **args) {
         return 1;
     }
 
-    plugins[plugin_count].name = strdup(args[1]);
+    plugins[plugin_count].name = safe_strdup(args[1]);
+    if (!plugins[plugin_count].name) {
+        dlclose(handle);
+        return 1;
+    }
     plugins[plugin_count].handle = handle;
     plugins[plugin_count].command_func = command_func;
     plugin_count++;
@@ -706,8 +722,12 @@ int razz_unloadplugin(char **args) {
 
 // Generate the shell prompt
 char* get_prompt() {
-    char cwd[1024];
-    getcwd(cwd, sizeof(cwd));
+    char cwd[PATH_MAX];
+    const char *fallback_dir = "?";
+    if (!getcwd(cwd, sizeof(cwd))) {
+        strncpy(cwd, fallback_dir, sizeof(cwd) - 1);
+        cwd[sizeof(cwd) - 1] = '\0';
+    }
     char *dir_name = strrchr(cwd, '/');
     if (dir_name != NULL) {
         dir_name++; // Move past '/'
@@ -716,6 +736,9 @@ char* get_prompt() {
     }
 
     char *prompt = malloc(256);
+    if (!prompt) {
+        return NULL;
+    }
     if (geteuid() == 0) {
         snprintf(prompt, 256, CYBER_STYLE TOP_BORDER "\n" SIDE_BORDER " razzshell-# [%s]> " RESET_COLOR, dir_name);
     } else {
@@ -785,14 +808,16 @@ char *command_generator(const char *text, int state) {
     while ((command_name = get_command_name(list_index)) != NULL) {
         list_index++;
         if (strncmp(command_name, text, len) == 0) {
-            return strdup(command_name);
+            return safe_strdup(command_name);
         }
     }
     return NULL;
 }
 
 char *read_input_line() {
-    char *line = readline(get_prompt());
+    char *prompt = get_prompt();
+    char *line = readline(prompt);
+    free(prompt);
     if (line && *line) {
         add_history(line);
     }
@@ -814,7 +839,7 @@ char *history_generator(const char *text, int state) {
     while (--history_index >= 0) {
         char *cmd = hist_list[history_index]->line;
         if (strncmp(cmd, text, strlen(text)) == 0) {
-            return strdup(cmd);
+            return safe_strdup(cmd);
         }
     }
     return NULL;
@@ -1311,7 +1336,10 @@ int razz_bookmark(char **args) {
         return 1;
     }
 
-    char *command = strdup(args[1]);
+    char *command = safe_strdup(args[1]);
+    if (!command) {
+        return 1;
+    }
     bookmarks[bookmark_count++] = command;
     printf("Command '%s' bookmarked!\n", command);
     return 1;
@@ -1419,8 +1447,16 @@ int razz_makealias(char **args) {
         printf("Alias limit reached.\n");
         return 1;
     }
-    aliases[alias_count].alias_name = strdup(args[1]);
-    aliases[alias_count].command = strdup(args[2]);
+    aliases[alias_count].alias_name = safe_strdup(args[1]);
+    if (!aliases[alias_count].alias_name) {
+        return 1;
+    }
+    aliases[alias_count].command = safe_strdup(args[2]);
+    if (!aliases[alias_count].command) {
+        free(aliases[alias_count].alias_name);
+        aliases[alias_count].alias_name = NULL;
+        return 1;
+    }
     alias_count++;
     printf("Alias '%s' created for command '%s'.\n", args[1], args[2]);
     return 1;
@@ -1775,7 +1811,10 @@ int razz_monitor(char **args) {
         // Memory Usage Bar
         double mem_used = (total_mem - available_mem) / 1024.0;
         double mem_total = total_mem / 1024.0;
-        double mem_percent = (mem_used / mem_total) * 100;
+        double mem_percent = 0.0;
+        if (mem_total > 0.0) {
+            mem_percent = (mem_used / mem_total) * 100;
+        }
         
         printf(NEON_CYAN "│ " NEON_PINK "Memory    " RESET_COLOR "[");
         int mem_bars = (int)(mem_percent / 2.5);
@@ -1891,7 +1930,16 @@ int razz_history_search(char **args) {
 
 // Syntax highlighting for commands
 void highlight_command(const char *cmd, const char *highlight) {
-    char *cmd_copy = strdup(cmd);
+    char *cmd_copy = safe_strdup(cmd);
+    if (!cmd_copy) {
+        int padding = 48 - (int)strlen(cmd);
+        printf("%s", cmd);
+        if (padding > 0) {
+            printf("%*s", padding, "");
+        }
+        printf(NEON_CYAN "│\n");
+        return;
+    }
     char *token = strtok(cmd_copy, " ");
     int first = 1;
     int pos = 0;
@@ -2065,7 +2113,10 @@ void razzshell_loop() {
         // Add input to history
         add_history(input);
         if (history_count < MAX_HISTORY) {
-            history[history_count++] = strdup(input);
+            char *entry = safe_strdup(input);
+            if (entry) {
+                history[history_count++] = entry;
+            }
         }
 
         // Tokenize input
