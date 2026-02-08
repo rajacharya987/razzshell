@@ -60,6 +60,10 @@ File and directory operations
 - headfile [filename]       Display first lines of a file
 - tailfile [filename]       Display last lines of a file
 - wordcount [filename]      Count words, lines, and characters
+- mkcd [directory]          Create a directory and switch into it
+- which [-a] [command...]   Locate a command in PATH or built-ins
+- setapi-ai [key] [model]   Configure AI access (default model: gemini-2.5-flash)
+- ai [prompt]               Query the configured AI model
 
 Process management
 - showprocesses             Display running processes
