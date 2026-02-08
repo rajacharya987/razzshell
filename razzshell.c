@@ -276,18 +276,18 @@ CommandMap command_list[] = {
     // Add additional commands here as per your list
 };
 
-// File type icons for list command
-#define ICON_DIRECTORY "📁"
-#define ICON_FILE "📄"
-#define ICON_EXECUTABLE "⚡"
-#define ICON_IMAGE "🖼️"
-#define ICON_VIDEO "🎥"
-#define ICON_AUDIO "🎵"
-#define ICON_ARCHIVE "📦"
-#define ICON_TEXT "📝"
-#define ICON_PDF "📕"
-#define ICON_CONFIG "⚙️"
-#define ICON_LINK "🔗"
+// File type labels for list command
+#define ICON_DIRECTORY "[DIR]"
+#define ICON_FILE "[FILE]"
+#define ICON_EXECUTABLE "[EXE]"
+#define ICON_IMAGE "[IMG]"
+#define ICON_VIDEO "[VID]"
+#define ICON_AUDIO "[AUD]"
+#define ICON_ARCHIVE "[ARC]"
+#define ICON_TEXT "[TXT]"
+#define ICON_PDF "[PDF]"
+#define ICON_CONFIG "[CFG]"
+#define ICON_LINK "[LNK]"
 
 // Function to get file icon based on extension and permissions
 const char* get_file_icon(const char* name, mode_t mode) {
