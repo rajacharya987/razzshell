@@ -21,6 +21,7 @@
 #include <sys/select.h>
 #include <sys/time.h>
 #include <strings.h>
+#include <ctype.h>
 
 // RazzShell modernization includes
 #include "src/shell_config.h"
@@ -100,6 +101,8 @@ typedef struct {
 
 Plugin plugins[MAX_ALIASES]; // Reuse the MAX_ALIASES constant for simplicity
 int plugin_count = 0;
+static char *ai_api_key = NULL;
+static char *ai_model = NULL;
 
 // Alias structure
 typedef struct {
@@ -126,6 +129,99 @@ static char *safe_strdup(const char *value) {
         fprintf(stderr, ERROR_STYLE "Memory allocation failed\n" RESET_COLOR);
     }
     return copy;
+}
+
+static char *escape_json_string(const char *input) {
+    if (!input) {
+        return safe_strdup("");
+    }
+
+    size_t length = 0;
+    for (const unsigned char *ptr = (const unsigned char *)input; *ptr; ptr++) {
+        switch (*ptr) {
+            case '\\':
+            case '"':
+                length += 2;
+                break;
+            case '\n':
+            case '\r':
+            case '\t':
+                length += 2;
+                break;
+            default:
+                if (iscntrl(*ptr)) {
+                    length += 6;
+                } else {
+                    length += 1;
+                }
+        }
+    }
+
+    char *escaped = malloc(length + 1);
+    if (!escaped) {
+        fprintf(stderr, ERROR_STYLE "Memory allocation failed\n" RESET_COLOR);
+        return NULL;
+    }
+
+    char *out = escaped;
+    for (const unsigned char *ptr = (const unsigned char *)input; *ptr; ptr++) {
+        switch (*ptr) {
+            case '\\':
+                *out++ = '\\';
+                *out++ = '\\';
+                break;
+            case '"':
+                *out++ = '\\';
+                *out++ = '"';
+                break;
+            case '\n':
+                *out++ = '\\';
+                *out++ = 'n';
+                break;
+            case '\r':
+                *out++ = '\\';
+                *out++ = 'r';
+                break;
+            case '\t':
+                *out++ = '\\';
+                *out++ = 't';
+                break;
+            default:
+                if (iscntrl(*ptr)) {
+                    snprintf(out, 7, "\\u%04x", *ptr);
+                    out += 6;
+                } else {
+                    *out++ = (char)*ptr;
+                }
+        }
+    }
+    *out = '\0';
+    return escaped;
+}
+
+static char *join_args(char **args, int start_index) {
+    size_t total = 0;
+    int count = 0;
+    for (int i = start_index; args[i] != NULL; i++) {
+        total += strlen(args[i]) + 1;
+        count++;
+    }
+    if (count == 0) {
+        return safe_strdup("");
+    }
+    char *result = malloc(total);
+    if (!result) {
+        fprintf(stderr, ERROR_STYLE "Memory allocation failed\n" RESET_COLOR);
+        return NULL;
+    }
+    result[0] = '\0';
+    for (int i = start_index; args[i] != NULL; i++) {
+        strcat(result, args[i]);
+        if (args[i + 1] != NULL) {
+            strcat(result, " ");
+        }
+    }
+    return result;
 }
 
 // Shell environment setup
@@ -202,6 +298,10 @@ int razz_aliases(char **args);      // list aliases
 int razz_unsetenv(char **args);     // unset environment variable
 int razz_repeat(char **args);       // repeat command
 int razz_history_clear(char **args);// clear history
+int razz_mkcd(char **args);         // mkdir + cd
+int razz_which(char **args);        // which
+int razz_setapi_ai(char **args);    // set AI API key and model
+int razz_ai(char **args);           // AI command
 int razz_loadplugin(char **args);   // Load a plugin
 int razz_unloadplugin(char **args); // Unload a plugin
 int razz_monitor(char **args);      // System resource monitor
@@ -241,6 +341,7 @@ CommandMap command_list[] = {
     {"commands", razz_commands, "Show command history"},              // history
     {"create", razz_create, "Create a file"},                         // touch
     {"makedir", razz_makedir, "Create directory"},                    // mkdir
+    {"mkcd", razz_mkcd, "Create a directory and switch into it"},
     {"removedir", razz_removedir, "Remove directory"},                // rmdir
     {"setperm", razz_setperm, "Change file permissions"},             // chmod
     {"setowner", razz_setowner, "Change file owner and group"},       // chown
@@ -275,6 +376,9 @@ CommandMap command_list[] = {
     {"wordcount", razz_wordcount, "Count words in a file"},           // wc
     {"aliases", razz_aliases, "List all aliases"},                    // list aliases
     {"unsetenv", razz_unsetenv, "Unset an environment variable"},     // unset environment variable
+    {"which", razz_which, "Locate a command in PATH or built-ins"},
+    {"setapi-ai", razz_setapi_ai, "Set AI API key and model"},
+    {"ai", razz_ai, "Query the configured AI model"},
     {"repeat", razz_repeat, "Repeat a command multiple times"},       // repeat command
     {"history_clear", razz_history_clear, "Clear command history"},   // clear history
     {"monitor", razz_monitor, "Show system resource monitor"},
@@ -1114,6 +1218,33 @@ int razz_makedir(char **args) {
     return 1;
 }
 
+int razz_mkcd(char **args) {
+    if (args[1] == NULL) {
+        fprintf(stderr, "Usage: mkcd [directory]\n");
+        return 1;
+    }
+
+    if (mkdir(args[1], 0755) != 0) {
+        if (errno != EEXIST) {
+            perror("mkcd");
+            return 1;
+        }
+
+        struct stat st;
+        if (stat(args[1], &st) != 0 || !S_ISDIR(st.st_mode)) {
+            fprintf(stderr, "mkcd: %s exists and is not a directory\n", args[1]);
+            return 1;
+        }
+    }
+
+    if (chdir(args[1]) != 0) {
+        perror("mkcd");
+        return 1;
+    }
+
+    return 1;
+}
+
 int razz_removedir(char **args) {
     if (args[1] == NULL) {
         fprintf(stderr, "Usage: removedir [directory]\n");
@@ -1129,6 +1260,261 @@ int razz_removedir(char **args) {
             perror("fork");
         }
     }
+    return 1;
+}
+
+int razz_which(char **args) {
+    if (args[1] == NULL) {
+        fprintf(stderr, "Usage: which [-a] [command...]\n");
+        return 1;
+    }
+
+    int show_all = 0;
+    int start_index = 1;
+    if (strcmp(args[1], "-a") == 0) {
+        show_all = 1;
+        start_index = 2;
+    }
+
+    if (args[start_index] == NULL) {
+        fprintf(stderr, "Usage: which [-a] [command...]\n");
+        return 1;
+    }
+
+    for (int arg_index = start_index; args[arg_index] != NULL; arg_index++) {
+        const char *name = args[arg_index];
+        int found = 0;
+
+        for (int i = 0; i < (int)(sizeof(command_list) / sizeof(CommandMap)); i++) {
+            if (strcmp(command_list[i].command_name, name) == 0) {
+                printf("%s: built-in\n", name);
+                found = 1;
+                if (!show_all) {
+                    break;
+                }
+            }
+        }
+
+        if (show_all || !found) {
+            for (int i = 0; i < alias_count; i++) {
+                if (strcmp(aliases[i].alias_name, name) == 0) {
+                    printf("%s: alias -> %s\n", name, aliases[i].command);
+                    found = 1;
+                    if (!show_all) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (show_all || !found) {
+            for (int i = 0; i < plugin_count; i++) {
+                if (strcmp(plugins[i].name, name) == 0) {
+                    printf("%s: plugin\n", name);
+                    found = 1;
+                    if (!show_all) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (show_all || !found) {
+            const char *path_env = getenv("PATH");
+            if (path_env) {
+                char *path_copy = safe_strdup(path_env);
+                if (!path_copy) {
+                    return 1;
+                }
+                char *saveptr = NULL;
+                char *dir = strtok_r(path_copy, ":", &saveptr);
+                while (dir) {
+                    char candidate[PATH_MAX];
+                    snprintf(candidate, sizeof(candidate), "%s/%s", dir, name);
+                    if (access(candidate, X_OK) == 0) {
+                        printf("%s\n", candidate);
+                        found = 1;
+                        if (!show_all) {
+                            break;
+                        }
+                    }
+                    dir = strtok_r(NULL, ":", &saveptr);
+                }
+                free(path_copy);
+            }
+        }
+
+        if (!found) {
+            fprintf(stderr, "%s not found\n", name);
+        }
+    }
+
+    return 1;
+}
+
+static int ai_model_is_valid(const char *model) {
+    if (!model || *model == '\0') {
+        return 0;
+    }
+    for (const char *ptr = model; *ptr; ptr++) {
+        if (!(isalnum((unsigned char)*ptr) || *ptr == '-' || *ptr == '_' || *ptr == '.')) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static const char *ai_default_model() {
+    return "gemini-2.5-flash";
+}
+
+int razz_setapi_ai(char **args) {
+    if (args[1] == NULL) {
+        const char *model = ai_model ? ai_model : ai_default_model();
+        if (ai_api_key) {
+            size_t key_len = strlen(ai_api_key);
+            const char *tail = key_len > 4 ? ai_api_key + key_len - 4 : ai_api_key;
+            printf("AI key: ****%s\n", tail);
+        } else {
+            printf("AI key: (not set)\n");
+        }
+        printf("AI model: %s\n", model);
+        printf("Usage: setapi-ai [api-key] [model]\n");
+        printf("Example: setapi-ai sk-xxxx %s\n", ai_default_model());
+        return 1;
+    }
+
+    if (strcmp(args[1], "--clear") == 0) {
+        free(ai_api_key);
+        ai_api_key = NULL;
+        free(ai_model);
+        ai_model = NULL;
+        unsetenv("RAZZSHELL_AI_KEY");
+        unsetenv("RAZZSHELL_AI_MODEL");
+        printf("AI configuration cleared.\n");
+        return 1;
+    }
+
+    if (args[2] && !ai_model_is_valid(args[2])) {
+        fprintf(stderr, "Invalid model name. Use letters, numbers, '.', '-', '_'.\n");
+        return 1;
+    }
+
+    free(ai_api_key);
+    ai_api_key = safe_strdup(args[1]);
+    if (!ai_api_key) {
+        return 1;
+    }
+
+    free(ai_model);
+    if (args[2]) {
+        ai_model = safe_strdup(args[2]);
+        if (!ai_model) {
+            return 1;
+        }
+    } else {
+        ai_model = safe_strdup(ai_default_model());
+        if (!ai_model) {
+            return 1;
+        }
+    }
+
+    setenv("RAZZSHELL_AI_KEY", ai_api_key, 1);
+    setenv("RAZZSHELL_AI_MODEL", ai_model, 1);
+    printf("AI configuration updated. Model: %s\n", ai_model);
+    return 1;
+}
+
+int razz_ai(char **args) {
+    if (!ai_api_key) {
+        const char *env_key = getenv("RAZZSHELL_AI_KEY");
+        if (env_key) {
+            ai_api_key = safe_strdup(env_key);
+        }
+    }
+
+    if (!ai_model) {
+        const char *env_model = getenv("RAZZSHELL_AI_MODEL");
+        if (env_model && ai_model_is_valid(env_model)) {
+            ai_model = safe_strdup(env_model);
+        } else {
+            ai_model = safe_strdup(ai_default_model());
+        }
+    }
+
+    if (!ai_api_key) {
+        fprintf(stderr, "AI key not set. Use: setapi-ai [api-key] [model]\n");
+        return 1;
+    }
+
+    char *prompt = join_args(args, 1);
+    if (!prompt) {
+        return 1;
+    }
+    if (prompt[0] == '\0') {
+        fprintf(stderr, "Usage: ai [prompt]\n");
+        free(prompt);
+        return 1;
+    }
+
+    char *escaped = escape_json_string(prompt);
+    free(prompt);
+    if (!escaped) {
+        return 1;
+    }
+
+    char json_payload[8192];
+    snprintf(json_payload, sizeof(json_payload),
+             "{\"contents\":[{\"parts\":[{\"text\":\"%s\"}]}]}",
+             escaped);
+    free(escaped);
+
+    char tmp_template[] = "/tmp/razzshell_ai_XXXXXX";
+    int tmp_fd = mkstemp(tmp_template);
+    if (tmp_fd < 0) {
+        perror("mkstemp");
+        return 1;
+    }
+
+    FILE *tmp_file = fdopen(tmp_fd, "w");
+    if (!tmp_file) {
+        perror("fdopen");
+        close(tmp_fd);
+        unlink(tmp_template);
+        return 1;
+    }
+
+    fprintf(tmp_file, "%s", json_payload);
+    fclose(tmp_file);
+
+    char url[512];
+    snprintf(url, sizeof(url),
+             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s",
+             ai_model, ai_api_key);
+
+    char command[1024];
+    snprintf(command, sizeof(command),
+             "curl -s -H \"Content-Type: application/json\" -d @%s \"%s\"",
+             tmp_template, url);
+
+    FILE *pipe = popen(command, "r");
+    if (!pipe) {
+        perror("popen");
+        unlink(tmp_template);
+        return 1;
+    }
+
+    char buffer[512];
+    while (fgets(buffer, sizeof(buffer), pipe)) {
+        fputs(buffer, stdout);
+    }
+
+    int status = pclose(pipe);
+    if (status == -1) {
+        perror("pclose");
+    }
+    unlink(tmp_template);
+    printf("\n");
     return 1;
 }
 
