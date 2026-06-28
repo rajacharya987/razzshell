@@ -288,6 +288,12 @@ The prompt displays the shell type (`$` for regular users, `#` for root) and the
   create [filename]
   ```
 
+- **`undo`**: Revert the last reversible action (e.g. file deletion, move, copy, creation, git command, or package installation).
+
+  ```
+  undo
+  ```
+
 - **`readfile`**: Display the contents of a file.
 
   ```
@@ -320,7 +326,13 @@ The prompt displays the shell type (`$` for regular users, `#` for root) and the
   showprocesses
   ```
 
-- **`terminate`**: Terminate a process.
+- **`processes`**: List running processes in structured table format (PID and NAME).
+
+  ```
+  processes
+  ```
+
+- **`terminate`**: Terminate a process. When called in a pipeline, reads process IDs from stdin and terminates them.
 
   ```
   terminate [process id]
@@ -346,11 +358,15 @@ The prompt displays the shell type (`$` for regular users, `#` for root) and the
 
 #### System Information
 
-- **`where`**: Display the current working directory.
+- **`where`**: Display the current working directory. If called in a pipeline with arguments, filters structured table columns based on expressions.
 
   ```
-  where
+  where [column] [operator] [value]
   ```
+
+  - `column`: Column name to filter on (e.g., `name`).
+  - `operator`: Comparison operator (`==`, `!=`, `contains`).
+  - `value`: Value to match.
 
 - **`whome`**: Show the current user.
 
@@ -550,6 +566,18 @@ The prompt displays the shell type (`$` for regular users, `#` for root) and the
 
   ```
   sudo su
+  ```
+
+- **`why`**: Explain why the last captured compilation or program run failed using AI diagnostics.
+
+  ```
+  why
+  ```
+
+- **`fix`**: Analyze the last failed command using AI diagnostics, propose a corrected command line, and execute it upon interactive user approval.
+
+  ```
+  fix
   ```
 
 - **`quit`**: Exit the shell.
