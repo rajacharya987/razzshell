@@ -4,7 +4,7 @@ CFLAGS = -Wall -Wextra -g -I.
 LDFLAGS = -lreadline -ldl -lncurses
 
 # Source files
-SRCS = razzshell.c src/shell_config.c src/posix_compat.c src/lexer.c src/ast.c src/parser.c
+SRCS = razzshell.c src/shell_config.c src/posix_compat.c src/lexer.c src/ast.c src/parser.c src/undo.c src/object_pipeline.c
 OBJS = $(SRCS:.c=.o)
 
 # Target executable

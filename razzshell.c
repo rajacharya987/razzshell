@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,7 +18,9 @@
 #include <grp.h>
 #include <termios.h>
 #include <dlfcn.h>
+#ifdef __linux__
 #include <linux/limits.h> // For PATH_MAX
+#endif
 #include <sys/select.h>
 #include <sys/time.h>
 #include <strings.h>
@@ -25,6 +28,8 @@
 // RazzShell modernization includes
 #include "src/shell_config.h"
 #include "src/posix_compat.h"
+#include "src/undo.h"
+#include "src/object_pipeline.h"
 
 #define MAX_ARGS 128
 #define MAX_JOBS 100
@@ -200,6 +205,8 @@ int razz_fetch(char **args);        // RazzFetch (custom neofetch-style system i
 int razz_history_search(char **args); // Enhanced history search
 int razz_mode(char **args);         // Switch shell mode
 int razz_set(char **args);          // Set shell options (set -e, etc.)
+int razz_why(char **args);
+int razz_fix(char **args);
 
 // Command-to-function mapping
 typedef struct {
@@ -212,6 +219,10 @@ CommandMap command_list[] = {
     {"change", razz_change, "Change directory"},                      // cd
     {"loadplugin", razz_loadplugin, "Load a plugin"},                 // loadplugin
     {"unloadplugin", razz_unloadplugin, "Unload a plugin"},           // unloadplugin
+    {"undo", razz_undo, "Undo last operation"},
+    {"processes", razz_processes, "List running processes"},
+    {"why", razz_why, "Explain why the last compile/run command failed"},
+    {"fix", razz_fix, "Propose a fix for the last failed command"},
     {"quit", razz_quit, "Exit the shell"},                            // exit
     {"say", razz_say, "Display a line of text"},                      // echo
     {"where", razz_where, "Print working directory"},                 // pwd
@@ -870,6 +881,9 @@ int razz_say(char **args) {
 }
 
 int razz_where(char **args) {
+    if (args[1] != NULL) {
+        return object_where(args);
+    }
     char cwd[1024];
     if (getcwd(cwd, sizeof(cwd)) != NULL) {
         printf("%s\n", cwd);
@@ -925,6 +939,55 @@ int razz_sendtoback(char **args) {
 }
 
 int razz_terminate(char **args) {
+    if (!isatty(STDIN_FILENO)) {
+        char line[256];
+        int pid_col = -1;
+        
+        // Read header
+        if (fgets(line, sizeof(line), stdin)) {
+            // Find PID column
+            char *line_cp = strdup(line);
+            char *token = strtok(line_cp, " \t\r\n");
+            int col = 0;
+            while (token) {
+                if (strcasecmp(token, "PID") == 0) {
+                    pid_col = col;
+                    break;
+                }
+                token = strtok(NULL, " \t\r\n");
+                col++;
+            }
+            free(line_cp);
+        }
+        
+        if (pid_col == -1) {
+            pid_col = 0; // default to first column
+        }
+        
+        // Read rows
+        while (fgets(line, sizeof(line), stdin)) {
+            char *line_cp = strdup(line);
+            char *token = strtok(line_cp, " \t\r\n");
+            int col = 0;
+            while (token && col < pid_col) {
+                token = strtok(NULL, " \t\r\n");
+                col++;
+            }
+            if (token) {
+                pid_t pid = atoi(token);
+                if (pid > 0) {
+                    if (kill(pid, SIGTERM) == -1) {
+                        perror("terminate");
+                    } else {
+                        printf("Process %d terminated.\n", pid);
+                    }
+                }
+            }
+            free(line_cp);
+        }
+        return 1;
+    }
+
     if (args[1] == NULL) {
         fprintf(stderr, "Usage: terminate [process id]\n");
     } else {
@@ -948,7 +1011,11 @@ int razz_copy(char **args) {
             perror("copy");
             exit(EXIT_FAILURE);
         } else if (pid > 0) {
-            waitpid(pid, NULL, 0);
+            int status;
+            waitpid(pid, &status, 0);
+            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+                undo_log_copy(args[2]);
+            }
         } else {
             perror("fork");
         }
@@ -966,7 +1033,11 @@ int razz_move(char **args) {
             perror("move");
             exit(EXIT_FAILURE);
         } else if (pid > 0) {
-            waitpid(pid, NULL, 0);
+            int status;
+            waitpid(pid, &status, 0);
+            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+                undo_log_move(args[1], args[2]);
+            }
         } else {
             perror("fork");
         }
@@ -977,16 +1048,23 @@ int razz_move(char **args) {
 int razz_delete(char **args) {
     if (args[1] == NULL) {
         fprintf(stderr, "Usage: delete [file]\n");
-    } else {
-        pid_t pid = fork();
-        if (pid == 0) {
-            execvp("rm", args);
-            perror("delete");
-            exit(EXIT_FAILURE);
-        } else if (pid > 0) {
-            waitpid(pid, NULL, 0);
+        return 1;
+    }
+
+    // 1. Safe execution check
+    if (!safe_delete_check(args)) {
+        return 1;
+    }
+
+    // 2. Perform move-to-trash for all target file/directory arguments
+    for (int i = 1; args[i] != NULL; i++) {
+        if (args[i][0] == '-') continue; // Skip flags
+        
+        char trash_path[PATH_MAX];
+        if (move_to_trash(args[i], trash_path) == 0) {
+            printf("\033[1;32m✓ Deleted '%s' (moved to trash)\033[0m\n", args[i]);
         } else {
-            perror("fork");
+            fprintf(stderr, "Failed to delete '%s'\n", args[i]);
         }
     }
     return 1;
@@ -1063,7 +1141,16 @@ int razz_create(char **args) {
             perror("create");
             exit(EXIT_FAILURE);
         } else if (pid > 0) {
-            waitpid(pid, NULL, 0);
+            int status;
+            waitpid(pid, &status, 0);
+            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+                for (int i = 1; args[i] != NULL; i++) {
+                    if (args[i][0] != '-') {
+                        undo_log_create(args[i]);
+                        break;
+                    }
+                }
+            }
         } else {
             perror("fork");
         }
@@ -1081,7 +1168,16 @@ int razz_makedir(char **args) {
             perror("makedir");
             exit(EXIT_FAILURE);
         } else if (pid > 0) {
-            waitpid(pid, NULL, 0);
+            int status;
+            waitpid(pid, &status, 0);
+            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+                for (int i = 1; args[i] != NULL; i++) {
+                    if (args[i][0] != '-') {
+                        undo_log_create(args[i]);
+                        break;
+                    }
+                }
+            }
         } else {
             perror("fork");
         }
@@ -1939,6 +2035,286 @@ void highlight_command(const char *cmd, const char *highlight) {
     free(cmd_copy);
 }
 
+char last_failed_command[512] = {0};
+
+static int min3(int a, int b, int c) {
+    int m = a;
+    if (b < m) m = b;
+    if (c < m) m = c;
+    return m;
+}
+
+static int Levenshtein(const char *s1, const char *s2) {
+    int len1 = strlen(s1);
+    int len2 = strlen(s2);
+    int matrix[30][30];
+    
+    if (len1 >= 30) len1 = 29;
+    if (len2 >= 30) len2 = 29;
+    
+    for (int i = 0; i <= len1; i++) matrix[i][0] = i;
+    for (int j = 0; j <= len2; j++) matrix[0][j] = j;
+    
+    for (int i = 1; i <= len1; i++) {
+        for (int j = 1; j <= len2; j++) {
+            int cost = (s1[i - 1] == s2[j - 1]) ? 0 : 1;
+            matrix[i][j] = min3(
+                matrix[i - 1][j] + 1,
+                matrix[i][j - 1] + 1,
+                matrix[i - 1][j - 1] + cost
+            );
+        }
+    }
+    return matrix[len1][len2];
+}
+
+const char* check_self_healing(const char *cmd) {
+    static const char *known_tools[] = {
+        "pacman", "git", "docker", "python", "node", "npm", "cargo", 
+        "ffmpeg", "grep", "find", "make", "gcc", "change", "list", 
+        "say", "where", "delete", "copy", "move", "create", "makedir",
+        "removedir", "undo", "processes", "terminate", "quit"
+    };
+    int num_tools = sizeof(known_tools) / sizeof(char *);
+    
+    int best_dist = 999;
+    const char *best_match = NULL;
+    
+    for (int i = 0; i < num_tools; i++) {
+        int dist = Levenshtein(cmd, known_tools[i]);
+        if (dist < best_dist) {
+            best_dist = dist;
+            best_match = known_tools[i];
+        }
+    }
+    
+    if (best_dist <= 2) {
+        return best_match;
+    }
+    return NULL;
+}
+
+int command_exists(const char *cmd) {
+    for (int i = 0; i < sizeof(command_list) / sizeof(CommandMap); i++) {
+        if (strcmp(cmd, command_list[i].command_name) == 0) return 1;
+    }
+    for (int i = 0; i < plugin_count; i++) {
+        if (strcmp(cmd, plugins[i].name) == 0) return 1;
+    }
+    const char *trans = posix_translate_command(cmd);
+    if (strcmp(trans, cmd) != 0) return 1;
+    
+    char *path_env = getenv("PATH");
+    if (!path_env) return 0;
+    
+    char *path_copy = strdup(path_env);
+    char *dir = strtok(path_copy, ":;");
+    while (dir != NULL) {
+        char full_path[PATH_MAX];
+        snprintf(full_path, sizeof(full_path), "%s/%s", dir, cmd);
+        if (access(full_path, X_OK) == 0) {
+            free(path_copy);
+            return 1;
+        }
+        snprintf(full_path, sizeof(full_path), "%s/%s.exe", dir, cmd);
+        if (access(full_path, X_OK) == 0) {
+            free(path_copy);
+            return 1;
+        }
+        dir = strtok(NULL, ":;");
+    }
+    free(path_copy);
+    return 0;
+}
+
+static int glob_uproject_exists() {
+    DIR *dir = opendir(".");
+    if (!dir) return 0;
+    struct dirent *entry;
+    int found = 0;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strstr(entry->d_name, ".uproject")) {
+            found = 1;
+            break;
+        }
+    }
+    closedir(dir);
+    return found;
+}
+
+void check_project_awareness() {
+    int is_git = (access(".git", F_OK) == 0);
+    int is_node = (access("package.json", F_OK) == 0);
+    int is_python = (access("requirements.txt", F_OK) == 0 || access("pyproject.toml", F_OK) == 0 || access("venv", F_OK) == 0 || access(".venv", F_OK) == 0);
+    int is_docker = (access("Dockerfile", F_OK) == 0 || access("docker-compose.yml", F_OK) == 0);
+    int is_unreal = (access("CMakeLists.txt", F_OK) == 0 || glob_uproject_exists());
+    
+    if (is_git || is_node || is_python || is_docker || is_unreal) {
+        printf("\n" NEON_CYAN "╔════════════════════════════════════════════════════════════════╗\n");
+        printf("║  📂 Detected Project Environment:                              ║\n");
+        
+        if (is_git)   printf("║  " NEON_GREEN "✓ Git Repository" RESET_COLOR "                                              ║\n");
+        if (is_node)  printf("║  " NEON_YELLOW "✓ Node/NPM Project" RESET_COLOR "                                            ║\n");
+        if (is_docker) printf("║  " NEON_BLUE "✓ Docker Containerization" RESET_COLOR "                                    ║\n");
+        if (is_unreal) printf("║  " NEON_PINK "✓ Unreal Engine / C++ Project" RESET_COLOR "                                   ║\n");
+        
+        const char *venv_names[] = {"venv", ".venv"};
+        for (int i = 0; i < 2; i++) {
+            struct stat st;
+            if (stat(venv_names[i], &st) == 0 && S_ISDIR(st.st_mode)) {
+                char venv_abs[PATH_MAX];
+                if (realpath(venv_names[i], venv_abs)) {
+                    char new_path[PATH_MAX * 2];
+                    char *old_path = getenv("PATH");
+                    snprintf(new_path, sizeof(new_path), "%s/bin:%s/Scripts:%s", venv_abs, venv_abs, old_path ? old_path : "");
+                    setenv("PATH", new_path, 1);
+                    printf("║  " NEON_CYAN "✓ Auto-Activated Virtual Environment" RESET_COLOR " (%-22s) ║\n", venv_names[i]);
+                }
+                is_python = 1;
+                break;
+            }
+        }
+        if (is_python && !access("requirements.txt", F_OK)) {
+            printf("║  " NEON_CYAN "✓ Python Environment (requirements.txt)" RESET_COLOR "                       ║\n");
+        }
+        
+        printf("╚════════════════════════════════════════════════════════════════╝\n\n");
+    }
+}
+
+int execute_with_capture(char **args) {
+    int pipefd[2];
+    if (pipe(pipefd) < 0) {
+        perror("pipe");
+        pid_t pid = fork();
+        if (pid == 0) {
+            execvp(args[0], args);
+            exit(EXIT_FAILURE);
+        }
+        int status;
+        waitpid(pid, &status, 0);
+        return status;
+    }
+    
+    pid_t pid = fork();
+    if (pid == 0) {
+        dup2(pipefd[1], STDOUT_FILENO);
+        dup2(pipefd[1], STDERR_FILENO);
+        close(pipefd[0]);
+        close(pipefd[1]);
+        
+        execvp(args[0], args);
+        perror("execvp");
+        exit(EXIT_FAILURE);
+    }
+    
+    close(pipefd[1]);
+    
+    const char *home = getenv("HOME");
+    if (!home) home = getenv("USERPROFILE");
+    if (!home) home = ".";
+    
+    char log_path[PATH_MAX];
+    snprintf(log_path, sizeof(log_path), "%s/.razzshell/last_command_output.txt", home);
+    
+    FILE *log_file = fopen(log_path, "w");
+    
+    char buffer[256];
+    ssize_t bytes_read;
+    while ((bytes_read = read(pipefd[0], buffer, sizeof(buffer) - 1)) > 0) {
+        buffer[bytes_read] = '\0';
+        printf("%s", buffer);
+        fflush(stdout);
+        if (log_file) {
+            fprintf(log_file, "%s", buffer);
+        }
+    }
+    close(pipefd[0]);
+    if (log_file) fclose(log_file);
+    
+    int status;
+    waitpid(pid, &status, 0);
+    return status;
+}
+
+int razz_why(char **args) {
+    (void)args;
+    if (strlen(last_failed_command) == 0) {
+        printf("No failed command in memory to explain.\n");
+        return 1;
+    }
+    
+    const char *home = getenv("HOME");
+    if (!home) home = getenv("USERPROFILE");
+    if (!home) home = ".";
+    
+    char log_path[PATH_MAX];
+    snprintf(log_path, sizeof(log_path), "%s/.razzshell/last_command_output.txt", home);
+    
+    char cwd[1024];
+    getcwd(cwd, sizeof(cwd));
+    
+    char cmd[PATH_MAX * 2 + 512];
+    snprintf(cmd, sizeof(cmd), "python src/ai_helper.py --explain \"%s\" \"%s\" \"%s\"", last_failed_command, log_path, cwd);
+    printf("\033[1;36m🤖 Asking RazzShell AI...\033[0m\n\n");
+    system(cmd);
+    return 1;
+}
+
+int razz_fix(char **args) {
+    (void)args;
+    if (strlen(last_failed_command) == 0) {
+        printf("No failed command in memory to fix.\n");
+        return 1;
+    }
+    
+    const char *home = getenv("HOME");
+    if (!home) home = getenv("USERPROFILE");
+    if (!home) home = ".";
+    
+    char log_path[PATH_MAX];
+    snprintf(log_path, sizeof(log_path), "%s/.razzshell/last_command_output.txt", home);
+    
+    char cwd[1024];
+    getcwd(cwd, sizeof(cwd));
+    
+    char cmd[PATH_MAX * 2 + 512];
+    snprintf(cmd, sizeof(cmd), "python src/ai_helper.py --explain \"%s\" \"%s\" \"%s\"", last_failed_command, log_path, cwd);
+    
+    printf("\033[1;36m🤖 Proposing fix...\033[0m\n\n");
+    
+    FILE *fp = popen(cmd, "r");
+    if (!fp) {
+        perror("fix failed");
+        return 1;
+    }
+    
+    char line[512];
+    char proposed_fix[512] = {0};
+    while (fgets(line, sizeof(line), fp)) {
+        printf("%s", line);
+        if (strncmp(line, "FIX: ", 5) == 0) {
+            strncpy(proposed_fix, line + 5, sizeof(proposed_fix) - 1);
+            proposed_fix[strcspn(proposed_fix, "\r\n")] = '\0';
+        }
+    }
+    pclose(fp);
+    
+    if (strlen(proposed_fix) > 0) {
+        printf("\n\033[1;33m👉 Would you like to run the proposed fix? [%s] (y/N): \033[0m", proposed_fix);
+        char choice = getchar();
+        if (choice != '\n' && choice != EOF) {
+            int c;
+            while ((c = getchar()) != '\n' && c != EOF);
+        }
+        if (choice == 'y' || choice == 'Y') {
+            printf("Running: %s...\n", proposed_fix);
+            system(proposed_fix);
+        }
+    }
+    return 1;
+}
+
 // Command: mode (switch shell mode)
 int razz_mode(char **args) {
     if (args[1] == NULL) {
@@ -2014,30 +2390,123 @@ void init_shell() {
     signal(SIGTSTP, sigtstp_handler);
     signal(SIGTTOU, SIG_IGN);
     
-    // Initialize job control
-    shell_pgid = getpid();
-    if (setpgid(shell_pgid, shell_pgid) < 0) {
-        perror("Couldn't put the shell in its own process group");
-        exit(1);
+    if (isatty(STDIN_FILENO)) {
+        // Initialize job control
+        shell_pgid = getpid();
+        if (setpgid(shell_pgid, shell_pgid) < 0) {
+            perror("Couldn't put the shell in its own process group");
+            exit(1);
+        }
+        
+        // Take control of the terminal
+        tcsetpgrp(STDIN_FILENO, shell_pgid);
+        tcgetattr(STDIN_FILENO, &shell_tmodes);
     }
-    
-    // Take control of the terminal
-    tcsetpgrp(STDIN_FILENO, shell_pgid);
-    tcgetattr(STDIN_FILENO, &shell_tmodes);
     
     // Initialize readline
     initialize_readline();
     
     // Clear screen and show welcome message
-    printf("\033[2J\033[H"); // Clear screen and move cursor to top
-    printf(NEON_CYAN
-           "╔════════════════════════════════════════════════════════════════╗\n"
-           "║                    Welcome to RazzShell v2.0.0                 ║\n"
-           "║                    Mode: %-37s ║\n"
-           "║                                                                ║\n"
-           "║  Type 'howto' for help or 'razzfetch' for system information  ║\n"
-           "╚════════════════════════════════════════════════════════════════╝\n"
-           RESET_COLOR "\n", shell_mode_name(shell_get_mode()));
+    if (isatty(STDIN_FILENO)) {
+        printf("\033[2J\033[H"); // Clear screen and move cursor to top
+        printf(NEON_CYAN
+               "╔════════════════════════════════════════════════════════════════╗\n"
+               "║                    Welcome to RazzShell v2.0.0                 ║\n"
+               "║                    Mode: %-37s ║\n"
+               "║                                                                ║\n"
+               "║  Type 'howto' for help or 'razzfetch' for system information  ║\n"
+               "╚════════════════════════════════════════════════════════════════╝\n"
+               RESET_COLOR "\n", shell_mode_name(shell_get_mode()));
+    }
+}
+
+int execute_pipeline(char *cmd_line) {
+    char *stages[16];
+    int num_stages = 0;
+    
+    char *line_cp = strdup(cmd_line);
+    char *token = strtok(line_cp, "|");
+    while (token != NULL && num_stages < 16) {
+        stages[num_stages++] = token;
+        token = strtok(NULL, "|");
+    }
+    
+    int pipes[15][2];
+    pid_t pids[16];
+    
+    for (int i = 0; i < num_stages - 1; i++) {
+        if (pipe(pipes[i]) < 0) {
+            perror("pipe");
+            free(line_cp);
+            return 1;
+        }
+    }
+    
+    for (int i = 0; i < num_stages; i++) {
+        pids[i] = fork();
+        if (pids[i] == 0) {
+            if (i > 0) {
+                dup2(pipes[i - 1][0], STDIN_FILENO);
+            }
+            if (i < num_stages - 1) {
+                dup2(pipes[i][1], STDOUT_FILENO);
+            }
+            
+            for (int j = 0; j < num_stages - 1; j++) {
+                close(pipes[j][0]);
+                close(pipes[j][1]);
+            }
+            
+            char *stage_cmd = strdup(stages[i]);
+            char *args[MAX_ARGS];
+            int arg_count = 0;
+            char *arg_token = strtok(stage_cmd, " \t\r\n");
+            while (arg_token != NULL && arg_count < MAX_ARGS - 1) {
+                const char *translated = posix_translate_command(arg_token);
+                char *alias_cmd = check_alias((char*)translated);
+                args[arg_count++] = alias_cmd;
+                arg_token = strtok(NULL, " \t\r\n");
+            }
+            args[arg_count] = NULL;
+            
+            if (args[0] == NULL) {
+                exit(0);
+            }
+            
+            int found = 0;
+            for (int k = 0; k < sizeof(command_list) / sizeof(CommandMap); k++) {
+                if (strcmp(args[0], command_list[k].command_name) == 0) {
+                    command_list[k].command_func(args);
+                    found = 1;
+                    break;
+                }
+            }
+            
+            if (!found) {
+                execvp(args[0], args);
+                fprintf(stderr, "%s: command not found\n", args[0]);
+                exit(EXIT_FAILURE);
+            }
+            
+            exit(EXIT_SUCCESS);
+        } else if (pids[i] < 0) {
+            perror("fork");
+            free(line_cp);
+            return 1;
+        }
+    }
+    
+    for (int i = 0; i < num_stages - 1; i++) {
+        close(pipes[i][0]);
+        close(pipes[i][1]);
+    }
+    
+    for (int i = 0; i < num_stages; i++) {
+        waitpid(pids[i], NULL, 0);
+    }
+    
+    free(line_cp);
+    return 1;
 }
 
 // Main shell loop
@@ -2068,6 +2537,12 @@ void razzshell_loop() {
             history[history_count++] = strdup(input);
         }
 
+        if (strchr(input, '|')) {
+            execute_pipeline(input);
+            free(input);
+            continue;
+        }
+
         // Tokenize input
         args = malloc(MAX_ARGS * sizeof(char *));
         int position = 0;
@@ -2084,6 +2559,60 @@ void razzshell_loop() {
         args[position] = NULL;
 
         if (args[0] != NULL) {
+            // Check if command is a valid built-in, alias, plugin, or system command
+            if (!command_exists(args[0])) {
+                const char *healing_match = check_self_healing(args[0]);
+                if (healing_match) {
+                    printf("\033[1;31m⚡ Command not found: %s\033[0m\n", args[0]);
+                    printf("\033[1;36m💡 Did you mean: %s\033[0m\n", healing_match);
+                    printf("Running: %s...\n", healing_match);
+                    args[0] = (char *)healing_match;
+                } else {
+                    // Try natural language intent understanding
+                    char cwd[1024];
+                    getcwd(cwd, sizeof(cwd));
+                    
+                    char ai_cmd[PATH_MAX * 2 + 512];
+                    snprintf(ai_cmd, sizeof(ai_cmd), "python src/ai_helper.py --intent \"%s\" \"%s\"", input, cwd);
+                    
+                    FILE *fp = popen(ai_cmd, "r");
+                    int success = 0;
+                    if (fp) {
+                        char proposed[512] = {0};
+                        if (fgets(proposed, sizeof(proposed), fp)) {
+                            proposed[strcspn(proposed, "\r\n")] = '\0';
+                            
+                            if (strlen(proposed) > 0) {
+                                printf("\033[1;36m💡 Intent detected:\033[0m %s\n", input);
+                                printf("\033[1;32m🚀 Proposed command:\033[0m %s\n", proposed);
+                                printf("Run this command? (Y/n): ");
+                                char choice = getchar();
+                                if (choice != '\n' && choice != EOF) {
+                                    int c;
+                                    while ((c = getchar()) != '\n' && c != EOF);
+                                }
+                                if (choice == 'y' || choice == 'Y') {
+                                    system(proposed);
+                                }
+                                success = 1;
+                            }
+                        }
+                        pclose(fp);
+                    }
+                    if (success) {
+                        free(input);
+                        free(args);
+                        continue;
+                    }
+                    
+                    // Fallback: command not found
+                    printf(RED_COLOR "%s: command not found\n" RESET_COLOR, args[0]);
+                    free(input);
+                    free(args);
+                    continue;
+                }
+            }
+
             int found = 0;
 
             // Special handling for 'sudo su'
@@ -2112,30 +2641,61 @@ void razzshell_loop() {
             }
             if (!found) {
                 // Execute external command
-                pid_t pid = fork();
-                if (pid == 0) {
-                    // Put the child in its own process group
-                    setpgid(0, 0);
-
-                    // Take control of the terminal
-                    tcsetpgrp(STDIN_FILENO, getpid());
-
-                    // Restore default signal handlers
-                    signal(SIGINT, SIG_DFL);
-                    signal(SIGTSTP, SIG_DFL);
-
-                    execvp(args[0], args);
-                    printf(RED_COLOR "%s: command not found\n" RESET_COLOR, args[0]);
-                    exit(EXIT_FAILURE);
-                } else if (pid > 0) {
-                    // Wait for the child process
-                    int child_status;
-                    waitpid(pid, &child_status, WUNTRACED);
-
-                    // Give control back to the shell
-                    tcsetpgrp(STDIN_FILENO, shell_pgid);
+                int is_compile_cmd = (strcmp(args[0], "make") == 0 || strcmp(args[0], "gcc") == 0 ||
+                                      strcmp(args[0], "clang") == 0 || strcmp(args[0], "g++") == 0 ||
+                                      strcmp(args[0], "npm") == 0 || strcmp(args[0], "cargo") == 0 ||
+                                      strcmp(args[0], "go") == 0 || strcmp(args[0], "python") == 0 ||
+                                      strcmp(args[0], "javac") == 0 || strcmp(args[0], "pip") == 0);
+                
+                char full_cmd[512] = {0};
+                for (int i = 0; args[i] != NULL; i++) {
+                    strncat(full_cmd, args[i], sizeof(full_cmd) - strlen(full_cmd) - 1);
+                    strncat(full_cmd, " ", sizeof(full_cmd) - strlen(full_cmd) - 1);
+                }
+                
+                if (is_compile_cmd) {
+                    int run_status = execute_with_capture(args);
+                    if (run_status != 0) {
+                        strncpy(last_failed_command, full_cmd, sizeof(last_failed_command) - 1);
+                        printf("\n\033[1;31m💡 Command failed. Type 'why' to analyze the failure using AI.\033[0m\n");
+                    }
                 } else {
-                    perror("fork");
+                    pid_t pid = fork();
+                    if (pid == 0) {
+                        setpgid(0, 0);
+                        tcsetpgrp(STDIN_FILENO, getpid());
+                        signal(SIGINT, SIG_DFL);
+                        signal(SIGTSTP, SIG_DFL);
+
+                        execvp(args[0], args);
+                        printf(RED_COLOR "%s: command not found\n" RESET_COLOR, args[0]);
+                        exit(EXIT_FAILURE);
+                    } else if (pid > 0) {
+                        int child_status;
+                        waitpid(pid, &child_status, WUNTRACED);
+                        tcsetpgrp(STDIN_FILENO, shell_pgid);
+                        
+                        if (WIFEXITED(child_status) && WEXITSTATUS(child_status) == 0) {
+                            if (strcmp(args[0], "git") == 0 && args[1] != NULL) {
+                                char cwd[1024];
+                                getcwd(cwd, sizeof(cwd));
+                                if (strcmp(args[1], "commit") == 0 || strcmp(args[1], "add") == 0 || strcmp(args[1], "init") == 0) {
+                                    undo_log_git(args[1], cwd);
+                                }
+                            } else if (strcmp(args[0], "pacman") == 0 && args[1] != NULL && strcmp(args[1], "-S") == 0 && args[2] != NULL) {
+                                for (int k = 2; args[k] != NULL; k++) {
+                                    if (args[k][0] != '-') {
+                                        undo_log_pkg("pacman", "install", args[k]);
+                                        break;
+                                    }
+                                }
+                            }
+                        } else {
+                            strncpy(last_failed_command, full_cmd, sizeof(last_failed_command) - 1);
+                        }
+                    } else {
+                        perror("fork");
+                    }
                 }
             }
         }
@@ -2175,9 +2735,12 @@ int main(int argc, char **argv) {
     
     // Initialize shell
     init_shell();
+    undo_init();
     initialize_readline();
     rl_bind_key('\t', rl_complete);
     using_history();
+    
+    check_project_awareness();
 
     razzshell_loop();
     return EXIT_SUCCESS;
